@@ -17,13 +17,14 @@
  * Reads config.json written by the WebUI and logs according to per-package settings.
  *
  * Architecture note:
- *   preAppSpecialize() runs inside the app process (app UID), which cannot write to
- *   /data/adb/. Log lines are therefore sent to the companion process (root) via IPC,
+ *   preAppSpecialize() retains zygote privileges, including SELinux restrictions.
+ *   Log lines are sent to the companion process (root) via IPC,
  *   and the companion appends them to module.log.
  *
  * Companion protocol (uint8_t opcode first):
  *   OP_READ_CONFIG (0): companion replies with uint32_t len + config bytes.
  *   OP_WRITE_LOG   (1): module sends uint32_t len + log line; companion returns nothing.
+ *   OpenDriverOpcode (2): bounded driver ID; companion replies with a registry directory FD.
  */
 
 #include <unistd.h>
@@ -33,9 +34,13 @@
 #include <cstdio>
 #include <ctime>
 #include <sys/stat.h>
+#include <sys/socket.h>
+#include <cerrno>
+#include <algorithm>
 
 #include "zygisk.hpp"
 #include "yyjson.h"
+#include "driver_loader.h"
 
 using zygisk::Api;
 using zygisk::AppSpecializeArgs;
@@ -47,6 +52,7 @@ static ssize_t write_all(int fd, const void *buf, size_t n) {
     size_t left = n;
     while (left > 0) {
         ssize_t written = write(fd, p, left);
+        if (written < 0 && errno == EINTR) continue;
         if (written <= 0) return written;
         p += written;
         left -= (size_t)written;
@@ -54,8 +60,22 @@ static ssize_t write_all(int fd, const void *buf, size_t n) {
     return (ssize_t)n;
 }
 
+static bool socket_transfer(int fd, void *buffer, size_t size, bool writing) {
+    auto *p = static_cast<char *>(buffer);
+    while (size) {
+        ssize_t n = writing ? send(fd, p, size, MSG_NOSIGNAL) : read(fd, p, size);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) return false;
+        p += n;
+        size -= n;
+    }
+    return true;
+}
+
 #define LOG_TAG    "ZygiskWebUI"
+#ifndef MODULE_ID
 #define MODULE_ID  "zygisk_sample"
+#endif
 #define DATA_DIR    "/data/adb/" MODULE_ID
 #define CONFIG_PATH DATA_DIR "/config.json"
 #define LOG_PATH    DATA_DIR "/module.log"
@@ -95,21 +115,33 @@ static void companion_handler(int sock) {
 
     if (op == OP_READ_CONFIG) {
         std::string config;
-        int cfd = open(CONFIG_PATH, O_RDONLY);
+        int cfd = open(CONFIG_PATH, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC);
+        if (cfd >= 0) {
+            struct stat st{};
+            if (fstat(cfd, &st) || !S_ISREG(st.st_mode) || st.st_size > gpu::MaxConfigBytes) {
+                close(cfd);
+                cfd = -1;
+            }
+        }
         if (cfd >= 0) {
             char buf[4096];
             ssize_t n;
-            while ((n = read(cfd, buf, sizeof(buf))) > 0)
+            while ((n = read(cfd, buf, sizeof(buf))) > 0) {
                 config.append(buf, n);
+                if (config.size() > gpu::MaxConfigBytes) { config.clear(); break; }
+            }
+            if (n < 0) config.clear();
             close(cfd);
         }
         uint32_t len = (uint32_t)config.size();
-        write_all(sock, &len, sizeof(len));
-        if (len > 0) write_all(sock, config.data(), len);
+        socket_transfer(sock, &len, sizeof(len), true);
+        if (len > 0) socket_transfer(sock, config.data(), len, true);
 
+    } else if (op == gpu::OpenDriverOpcode) {
+        gpu::serveDriverDirectory(sock);
     } else if (op == OP_WRITE_LOG) {
         uint32_t len = 0;
-        if (read(sock, &len, sizeof(len)) != sizeof(len) || len == 0 || len > 65536) return;
+        if (!socket_transfer(sock, &len, sizeof(len), false) || len == 0 || len > 65536) return;
         std::string line(len, '\0');
         ssize_t nread = 0;
         while (nread < (ssize_t)len) {
@@ -154,6 +186,7 @@ static void remoteLog(Api *api, int prio, const char *tag, const char *msg) {
         (int)getpid(), (int)gettid(),
         levelChar(prio), tag, msg);
     if (len <= 0) return;
+    len = std::min(len, static_cast<int>(sizeof(line) - 1));
 
     // Send to companion (root) via IPC
     int sock = api->connectCompanion();
@@ -161,9 +194,9 @@ static void remoteLog(Api *api, int prio, const char *tag, const char *msg) {
 
     uint8_t op = OP_WRITE_LOG;
     uint32_t msgLen = (uint32_t)len;
-    write_all(sock, &op, 1);
-    write_all(sock, &msgLen, sizeof(msgLen));
-    write_all(sock, line, (size_t)len);
+    socket_transfer(sock, &op, 1, true);
+    socket_transfer(sock, &msgLen, sizeof(msgLen), true);
+    socket_transfer(sock, line, (size_t)len, true);
     close(sock);
 }
 
@@ -175,73 +208,81 @@ public:
     }
 
     void preAppSpecialize(AppSpecializeArgs *args) override {
+        if (handled) return;
+        handled = true;
+        if (!args->nice_name) {
+            api->setOption(zygisk::Option::DLCLOSE_MODULE_LIBRARY);
+            return;
+        }
         const char *process = env->GetStringUTFChars(args->nice_name, nullptr);
-        preSpecialize(process);
+        if (!process) {
+            env->ExceptionClear();
+            api->setOption(zygisk::Option::DLCLOSE_MODULE_LIBRARY);
+            return;
+        }
+        std::string processName(process);
         env->ReleaseStringUTFChars(args->nice_name, process);
+        std::string dataDir;
+        if (args->app_data_dir) {
+            const char *data = env->GetStringUTFChars(args->app_data_dir, nullptr);
+            if (data) {
+                dataDir = data;
+                env->ReleaseStringUTFChars(args->app_data_dir, data);
+            } else {
+                env->ExceptionClear();
+            }
+        }
+        preSpecialize(processName, dataDir, args->uid, args->gid);
     }
 
     void preServerSpecialize(ServerSpecializeArgs *args) override {
-        preSpecialize("system_server");
+        api->setOption(zygisk::Option::DLCLOSE_MODULE_LIBRARY);
     }
 
 private:
     Api *api = nullptr;
     JNIEnv *env = nullptr;
+    bool handled = false;
+    gpu::DriverLoader driverLoader;
 
-    void preSpecialize(const char *process) {
+    void preSpecialize(const std::string &processName, const std::string &dataDir, uid_t uid, gid_t gid) {
         // Read config from companion (OP_READ_CONFIG)
         std::string configJson;
         int sock = api->connectCompanion();
         if (sock >= 0) {
+            timeval timeout{2, 0};
+            setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+            setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
             uint8_t op = OP_READ_CONFIG;
-            write_all(sock, &op, 1);
+            socket_transfer(sock, &op, 1, true);
             uint32_t len = 0;
-            if (read(sock, &len, sizeof(len)) == sizeof(len) && len > 0) {
+            if (socket_transfer(sock, &len, sizeof(len), false) && len > 0 && len <= gpu::MaxConfigBytes) {
                 configJson.resize(len);
-                read(sock, &configJson[0], len);
+                if (!socket_transfer(sock, configJson.data(), len, false)) configJson.clear();
             }
             close(sock);
         }
 
-        if (configJson.empty()) {
+        const auto selection = gpu::selectDriver(configJson, processName);
+        const auto &result = driverLoader.load(api, selection, dataDir, uid, gid);
+        std::string diagnostic = "process=" + processName + " status=" + gpu::statusName(result.status) +
+            " reason=" + result.reason + " driverPath=" + result.driverPath + " hookPath=" + result.hookPath;
+        if (result.status != gpu::DriverLoadStatus::Loaded) {
+            diagnostic += "; fallback to system driver";
             api->setOption(zygisk::Option::DLCLOSE_MODULE_LIBRARY);
+        }
+        if (result.status == gpu::DriverLoadStatus::NotTargeted) {
+            __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, "%s", diagnostic.c_str());
             return;
         }
+        remoteLog(api, ANDROID_LOG_INFO, LOG_TAG, diagnostic.c_str());
 
         yyjson_doc *doc = yyjson_read(configJson.data(), configJson.size(), 0);
         if (!doc) {
-            api->setOption(zygisk::Option::DLCLOSE_MODULE_LIBRARY);
             return;
         }
         yyjson_val *root = yyjson_doc_get_root(doc);
-
-        // Check enabled flag
-        yyjson_val *enabledVal = yyjson_obj_get(root, "enabled");
-        if (enabledVal && yyjson_is_bool(enabledVal) && !yyjson_get_bool(enabledVal)) {
-            yyjson_doc_free(doc);
-            api->setOption(zygisk::Option::DLCLOSE_MODULE_LIBRARY);
-            return;
-        }
-
-        // Check targetPackages
-        bool targeted = false;
-        yyjson_val *targets = yyjson_obj_get(root, "targetPackages");
-        if (yyjson_is_arr(targets)) {
-            size_t idx, max;
-            yyjson_val *pkg;
-            yyjson_arr_foreach(targets, idx, max, pkg) {
-                if (yyjson_is_str(pkg) &&
-                    strcmp(yyjson_get_str(pkg), process) == 0) {
-                    targeted = true;
-                    break;
-                }
-            }
-        }
-        if (!targeted) {
-            yyjson_doc_free(doc);
-            api->setOption(zygisk::Option::DLCLOSE_MODULE_LIBRARY);
-            return;
-        }
+        const char *process = selection.packageName.c_str();
 
         // Per-package settings
         const char *logLevel = "INFO";

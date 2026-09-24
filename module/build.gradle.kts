@@ -47,9 +47,11 @@ android {
         }
         externalNativeBuild {
             cmake {
+                targets(moduleLibName)
                 cppFlags("-std=c++20")
                 arguments(
                     "-DANDROID_STL=c++_static", "-DMODULE_NAME=$moduleLibName",
+                    "-DMODULE_ID=$moduleId",
                     "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
                     "-DCMAKE_C_COMPILER_LAUNCHER=ccache",
                     "-DCMAKE_CXX_COMPILER_LAUNCHER=ccache",
