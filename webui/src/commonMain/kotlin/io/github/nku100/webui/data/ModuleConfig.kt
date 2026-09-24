@@ -33,6 +33,8 @@ data class ModuleConfig(
  */
 @Serializable
 data class PackageSettings(
+    /** Selected imported graphics driver, or empty for the system driver. */
+    val driverId: String = "",
     /** Log level: DEBUG, INFO, WARN */
     val logLevel: String = "INFO",
     /** Custom log tag. Defaults to the app's short package name. */
