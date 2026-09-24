@@ -2,6 +2,7 @@ package io.github.nku100.webui.data
 
 import io.github.nku100.webui.ModuleInfo
 import io.github.nku100.webui.platform.PlatformBridge
+import io.github.nku100.webui.platform.ShellResult
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -24,6 +25,7 @@ data class DriverRecord(
 enum class DriverDeleteResult { DELETED, BOUND, NOT_FOUND, INVALID_ID, IO_ERROR }
 
 internal class DriverStoreException(val code: DriverArchiveError) : Exception(code.name)
+internal typealias RootCommand = suspend (String) -> ShellResult
 
 /** Root-owned driver registry. Only completed directories referenced by index.json are visible. */
 object DriverRepository {
@@ -76,42 +78,53 @@ object DriverRepository {
         if (size > MAX_META_BYTES) throw DriverStoreException(DriverArchiveError.INVALID_META_JSON_ENTRY)
     }
 
-    internal suspend fun readIndex(): List<DriverRecord> {
-        val result = checked("if [ -f ${quote(indexPath)} ]; then cat ${quote(indexPath)}; fi")
+    internal suspend fun readIndex(execute: RootCommand = PlatformBridge::exec): List<DriverRecord> {
+        val result = checked("if [ -f ${quote(indexPath)} ]; then cat ${quote(indexPath)}; fi", execute)
         if (result.stdout.isBlank()) return emptyList()
         return try { json.decodeFromString(result.stdout) } catch (_: Exception) {
             throw DriverStoreException(DriverArchiveError.STORAGE_ERROR)
         }
     }
 
-    internal suspend fun listStored(): List<DriverInfo> = readIndex().filter { record ->
+    internal suspend fun listStored(execute: RootCommand = PlatformBridge::exec): List<DriverInfo> = readIndex(execute).filter { record ->
         if (!isSafeRecord(record)) return@filter false
         val dir = "$root/${record.driverId}"
-        PlatformBridge.exec("test -f ${quote("$dir/meta.json")} && test -f ${quote("$dir/${record.libraryName}")}").errno == 0
+        execute("test -f ${quote("$dir/meta.json")} && test -f ${quote("$dir/${record.libraryName}")}").errno == 0
     }.map { it.info() }
 
-    internal suspend fun deleteStored(driverId: String): DriverDeleteResult {
+    internal suspend fun deleteStored(
+        driverId: String,
+        execute: RootCommand = PlatformBridge::exec,
+    ): DriverDeleteResult {
         if (!idPattern.matches(driverId)) return DriverDeleteResult.INVALID_ID
-        return try {
-            val configResult = checked("if [ -f ${quote(ModuleInfo.CONFIG_PATH)} ]; then cat ${quote(ModuleInfo.CONFIG_PATH)}; fi")
-            val config = if (configResult.stdout.isBlank()) ModuleConfig() else
-                json.decodeFromString<ModuleConfig>(configResult.stdout)
-            if (!canDelete(driverId, config)) return DriverDeleteResult.BOUND
-            val records = readIndex()
-            if (records.none { it.driverId == driverId }) return DriverDeleteResult.NOT_FOUND
-            val directory = "$root/$driverId"
-            val trash = "$root/.delete-${nonce()}"
-            checked("mv ${quote(directory)} ${quote(trash)}")
+        return RepositoryMutationGuard.mutate {
             try {
-                writeIndex(records.filterNot { it.driverId == driverId })
-            } catch (e: Exception) {
-                PlatformBridge.exec("mv ${quote(trash)} ${quote(directory)}")
-                throw e
+                val configPath = ConfigRepository.configPath
+                val configResult = checked("if [ -f ${quote(configPath)} ]; then cat ${quote(configPath)}; fi", execute)
+                val config = if (configResult.stdout.isBlank()) ModuleConfig() else
+                    json.decodeFromString<ModuleConfig>(configResult.stdout)
+                if (!canDelete(driverId, config)) return@mutate DriverDeleteResult.BOUND
+                val records = readIndex(execute)
+                if (records.none { it.driverId == driverId }) return@mutate DriverDeleteResult.NOT_FOUND
+                val directory = "$root/$driverId"
+                val trash = "$root/.delete-${nonce()}"
+                val preparedIndex = prepareIndex(records.filterNot { it.driverId == driverId }, execute)
+                try {
+                    checked("mv ${quote(directory)} ${quote(trash)}", execute)
+                    try {
+                        checked("mv ${quote(preparedIndex)} ${quote(indexPath)}", execute)
+                    } catch (e: Exception) {
+                        execute("mv ${quote(trash)} ${quote(directory)}")
+                        throw e
+                    }
+                    checked("rm -rf ${quote(trash)}", execute)
+                    DriverDeleteResult.DELETED
+                } finally {
+                    execute("rm -f ${quote(preparedIndex)}")
+                }
+            } catch (_: Exception) {
+                DriverDeleteResult.IO_ERROR
             }
-            checked("rm -rf ${quote(trash)}")
-            DriverDeleteResult.DELETED
-        } catch (_: Exception) {
-            DriverDeleteResult.IO_ERROR
         }
     }
 
@@ -121,6 +134,7 @@ object DriverRepository {
         entries: List<DriverFileInfo>,
         metaJson: Map<String, String>,
         importedAtEpochMillis: Long,
+        execute: RootCommand = PlatformBridge::exec,
         streamFile: suspend (String, suspend (String) -> Unit) -> Unit,
     ): DriverImportResult {
         val validation = DriverArchivePolicy.validate(archiveSha256, entries, metaJson)
@@ -133,16 +147,10 @@ object DriverRepository {
         val stage = "$root/.stage-${nonce()}"
         val final = "$root/${driver.driverId}"
         try {
-            val old = readIndex()
-            if (old.any { it.driverId == driver.driverId }) {
-                val existing = PlatformBridge.exec("test -f ${quote("$final/meta.json")} && test -f ${quote("$final/${driver.libraryName}")}")
-                if (existing.errno != 0) throw DriverStoreException(DriverArchiveError.STORAGE_ERROR)
-                return validation
-            }
-            checked("mkdir -p ${quote(root)} && mkdir ${quote(stage)}")
+            checked("mkdir -p ${quote(root)} && mkdir ${quote(stage)}", execute)
             for (name in listOf("meta.json", driver.libraryName)) {
                 val path = "$stage/$name"
-                checked(": > ${quote(path)}")
+                checked(": > ${quote(path)}", execute)
                 val sourceHash = Sha256()
                 var size = 0L
                 streamFile(name) { base64 ->
@@ -154,34 +162,51 @@ object DriverRepository {
                     if (name == "meta.json") checkMetaSize(size.toInt())
                     if (size > MAX_ARCHIVE_BYTES) throw DriverStoreException(DriverArchiveError.INVALID_ZIP)
                     sourceHash.update(bytes)
-                    checked("printf '%s' ${quote(base64)} | base64 -d >> ${quote(path)}")
+                    checked("printf '%s' ${quote(base64)} | base64 -d >> ${quote(path)}", execute)
                 }
                 if (size == 0L) throw DriverStoreException(DriverArchiveError.TRANSFER_FAILED)
-                val rootHash = checked("sha256sum ${quote(path)}").stdout.substringBefore(' ').lowercase()
+                val rootHash = checked("sha256sum ${quote(path)}", execute).stdout.substringBefore(' ').lowercase()
                 if (rootHash != sourceHash.hexDigest()) throw DriverStoreException(DriverArchiveError.TRANSFER_FAILED)
             }
-            checked("if [ -e ${quote(final)} ]; then exit 17; fi; mv ${quote(stage)} ${quote(final)}")
-            try {
-                writeIndex(old + DriverRecord(driver.driverId, driver.name, driver.libraryName, driver.abi,
-                    importedAtEpochMillis, archiveSha256.lowercase()))
-            } catch (e: Exception) {
-                PlatformBridge.exec("rm -rf ${quote(final)}")
-                throw e
+            return RepositoryMutationGuard.mutate {
+                val latest = readIndex(execute)
+                val existing = latest.firstOrNull { it.driverId == driver.driverId }
+                if (existing != null) {
+                    val installed = execute("test -f ${quote("$final/meta.json")} && test -f ${quote("$final/${existing.libraryName}")}")
+                    if (installed.errno != 0) throw DriverStoreException(DriverArchiveError.STORAGE_ERROR)
+                    return@mutate DriverImportResult.Accepted(existing.info())
+                }
+                val occupied = execute("test -e ${quote(final)} || test -L ${quote(final)}")
+                if (occupied.errno == 0) throw DriverStoreException(DriverArchiveError.STORAGE_ERROR)
+                val record = DriverRecord(driver.driverId, driver.name, driver.libraryName, driver.abi,
+                    importedAtEpochMillis, archiveSha256.lowercase())
+                val preparedIndex = prepareIndex(latest + record, execute)
+                try {
+                    checked("if [ -e ${quote(final)} ] || [ -L ${quote(final)} ]; then exit 17; fi; mv ${quote(stage)} ${quote(final)}", execute)
+                    try {
+                        checked("mv ${quote(preparedIndex)} ${quote(indexPath)}", execute)
+                    } catch (e: Exception) {
+                        execute("rm -rf ${quote(final)}")
+                        throw e
+                    }
+                    DriverImportResult.Accepted(record.info())
+                } finally {
+                    execute("rm -f ${quote(preparedIndex)}")
+                }
             }
-            return validation
         } catch (e: DriverStoreException) {
             return DriverImportResult.Rejected(e.code)
         } catch (_: Exception) {
             return DriverImportResult.Rejected(DriverArchiveError.STORAGE_ERROR)
         } finally {
-            PlatformBridge.exec("if [ -d ${quote(stage)} ]; then rm -rf ${quote(stage)}; fi")
+            execute("if [ -d ${quote(stage)} ]; then rm -rf ${quote(stage)}; fi")
         }
     }
 
-    private suspend fun writeIndex(records: List<DriverRecord>) {
+    private suspend fun prepareIndex(records: List<DriverRecord>, execute: RootCommand): String {
         val temp = "$root/.index-${nonce()}"
         try {
-            checked(": > ${quote(temp)}")
+            checked(": > ${quote(temp)}", execute)
             val bytes = json.encodeToString(records).encodeToByteArray()
             var offset = 0
             transfer(
@@ -193,16 +218,17 @@ object DriverRepository {
                         count
                     }
                 },
-                appendBase64 = { chunk -> checked("printf '%s' ${quote(chunk)} | base64 -d >> ${quote(temp)}") },
+                appendBase64 = { chunk -> checked("printf '%s' ${quote(chunk)} | base64 -d >> ${quote(temp)}", execute) },
             )
-            checked("mv ${quote(temp)} ${quote(indexPath)}")
-        } finally {
-            PlatformBridge.exec("rm -f ${quote(temp)}")
+            return temp
+        } catch (e: Exception) {
+            execute("rm -f ${quote(temp)}")
+            throw e
         }
     }
 
-    private suspend fun checked(command: String): io.github.nku100.webui.platform.ShellResult {
-        val result = PlatformBridge.exec(command)
+    private suspend fun checked(command: String, execute: RootCommand): ShellResult {
+        val result = execute(command)
         if (result.errno != 0) throw DriverStoreException(DriverArchiveError.STORAGE_ERROR)
         return result
     }

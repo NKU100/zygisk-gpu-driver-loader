@@ -3,6 +3,7 @@ package io.github.nku100.webui.data
 import io.github.nku100.webui.ModuleInfo
 import io.github.nku100.webui.platform.PlatformBridge
 import kotlinx.serialization.json.Json
+import kotlin.random.Random
 
 /**
  * Repository that manages reading/writing module configuration.
@@ -23,13 +24,39 @@ object ConfigRepository {
         }
     }
 
-    suspend fun save(config: ModuleConfig) {
-        val content = json.encodeToString(ModuleConfig.serializer(), config)
-        val escaped = content.replace("'", "'\\''")
-        val escapedPath = configPath.replace("'", "'\\''")
-        val result = PlatformBridge.exec("echo '$escaped' > '$escapedPath'")
-        if (result.errno != 0) {
-            throw IllegalStateException("Failed to save config: ${result.stderr.ifBlank { "errno=${result.errno}" }}")
+    suspend fun save(config: ModuleConfig) = saveWith(config, PlatformBridge::exec)
+
+    internal suspend fun saveWith(config: ModuleConfig, execute: RootCommand, path: String? = null) {
+        RepositoryMutationGuard.mutate {
+            val target = path ?: configPath
+            val temporary = "$target.tmp-${Random.nextLong().toULong().toString(16)}-${Random.nextLong().toULong().toString(16)}"
+            suspend fun checked(command: String) {
+                val result = execute(command)
+                if (result.errno != 0) {
+                    throw IllegalStateException("Failed to save config: ${result.stderr.ifBlank { "errno=${result.errno}" }}")
+                }
+            }
+            try {
+                checked(": > ${quote(temporary)}")
+                val bytes = json.encodeToString(ModuleConfig.serializer(), config).encodeToByteArray()
+                var offset = 0
+                DriverRepository.transfer(
+                    read = { buffer ->
+                        if (offset == bytes.size) -1 else {
+                            val count = minOf(buffer.size, bytes.size - offset)
+                            bytes.copyInto(buffer, 0, offset, offset + count)
+                            offset += count
+                            count
+                        }
+                    },
+                    appendBase64 = { chunk -> checked("printf '%s' ${quote(chunk)} | base64 -d >> ${quote(temporary)}") },
+                )
+                checked("mv ${quote(temporary)} ${quote(target)}")
+            } finally {
+                execute("rm -f ${quote(temporary)}")
+            }
         }
     }
+
+    private fun quote(value: String): String = "'${value.replace("'", "'\\''")}'"
 }
