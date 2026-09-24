@@ -33,6 +33,20 @@ class DriverArchivePolicyTest {
     )
 
     @Test
+    fun rejectsDriveQualifiedAbsoluteEntryPath() = assertRejected(
+        validEntries + DriverFileInfo("C:/outside", isRegularFile = true),
+        validMetadata,
+        DriverArchiveError.INVALID_ENTRY_PATH,
+    )
+
+    @Test
+    fun rejectsWindowsRootedEntryPath() = assertRejected(
+        validEntries + DriverFileInfo("\\\\server\\share\\outside", isRegularFile = true),
+        validMetadata,
+        DriverArchiveError.INVALID_ENTRY_PATH,
+    )
+
+    @Test
     fun rejectsTraversalEntryPath() = assertRejected(
         validEntries + DriverFileInfo("../outside", isRegularFile = true),
         validMetadata,
@@ -54,6 +68,13 @@ class DriverArchivePolicyTest {
     @Test
     fun rejectsMissingLibraryName() = assertRejected(
         validEntries, validMetadata - "libraryName", DriverArchiveError.MISSING_LIBRARY_NAME,
+    )
+
+    @Test
+    fun rejectsMetadataOnlyArchiveWhenLibraryNameIsMetaJson() = assertRejected(
+        listOf(validEntries[0]),
+        validMetadata + ("libraryName" to "meta.json"),
+        DriverArchiveError.LIBRARY_NAME_MISMATCH,
     )
 
     @Test

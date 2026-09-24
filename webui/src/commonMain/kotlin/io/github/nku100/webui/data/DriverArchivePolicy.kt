@@ -35,6 +35,9 @@ object DriverArchivePolicy {
 
         val libraryName = metaJson["libraryName"]?.takeIf { it.isNotBlank() }
             ?: return DriverImportResult.Rejected(DriverArchiveError.MISSING_LIBRARY_NAME)
+        if (libraryName == META_FILE) {
+            return DriverImportResult.Rejected(DriverArchiveError.LIBRARY_NAME_MISMATCH)
+        }
         val abi = metaJson["abi"].orEmpty()
         if (abi != SUPPORTED_ABI) {
             return DriverImportResult.Rejected(DriverArchiveError.UNSUPPORTED_ABI)
@@ -62,7 +65,8 @@ object DriverArchivePolicy {
     }
 
     private fun normalizeRelativePath(path: String): List<String>? {
-        if (path.isEmpty() || path.startsWith('/') || '\\' in path || '\u0000' in path) return null
+        if (path.isEmpty() || path.startsWith('/') || path.startsWith('\\') || '\\' in path || '\u0000' in path) return null
+        if (path.length >= 3 && path[0].isLetter() && path[1] == ':' && path[2] == '/') return null
         val components = path.split('/')
         if (components.any { it.isEmpty() || it == "." || it == ".." }) return null
         return components
