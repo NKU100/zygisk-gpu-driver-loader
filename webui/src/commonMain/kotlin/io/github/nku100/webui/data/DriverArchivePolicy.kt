@@ -23,7 +23,7 @@ object DriverArchivePolicy {
             normalizedPaths += entry to path
         }
 
-        val metadataEntries = normalizedPaths.filter { (_, path) -> path.last() == META_FILE }
+        val metadataEntries = normalizedPaths.filter { (_, path) -> path == listOf(META_FILE) }
         if (metadataEntries.isEmpty()) {
             return DriverImportResult.Rejected(DriverArchiveError.MISSING_META_JSON)
         }
@@ -35,7 +35,9 @@ object DriverArchivePolicy {
 
         val libraryName = metaJson["libraryName"]?.takeIf { it.isNotBlank() }
             ?: return DriverImportResult.Rejected(DriverArchiveError.MISSING_LIBRARY_NAME)
-        if (libraryName == META_FILE) {
+        val normalizedLibraryPath = normalizeRelativePath(libraryName)
+            ?: return DriverImportResult.Rejected(DriverArchiveError.LIBRARY_NAME_MISMATCH)
+        if (normalizedLibraryPath == metadataEntry.second) {
             return DriverImportResult.Rejected(DriverArchiveError.LIBRARY_NAME_MISMATCH)
         }
         val abi = metaJson["abi"].orEmpty()
@@ -43,7 +45,8 @@ object DriverArchivePolicy {
             return DriverImportResult.Rejected(DriverArchiveError.UNSUPPORTED_ABI)
         }
 
-        val libraryEntries = normalizedPaths.filter { (_, path) -> path.last() == libraryName }
+        val libraryFileName = normalizedLibraryPath.last()
+        val libraryEntries = normalizedPaths.filter { (_, path) -> path.last() == libraryFileName }
         if (libraryEntries.size > 1) {
             return DriverImportResult.Rejected(DriverArchiveError.DUPLICATE_LIBRARY_NAME)
         }
@@ -55,10 +58,6 @@ object DriverArchivePolicy {
         if (!libraryEntry.first.isRegularFile) {
             return DriverImportResult.Rejected(DriverArchiveError.LIBRARY_NOT_FOUND)
         }
-        if (libraryEntry.first.path != libraryName) {
-            return DriverImportResult.Rejected(DriverArchiveError.LIBRARY_NAME_MISMATCH)
-        }
-
         val name = metaJson["name"]?.takeIf { it.isNotBlank() } ?: libraryName
         val driverId = stableDriverId(archiveSha256, libraryName, abi)
         return DriverImportResult.Accepted(DriverInfo(driverId, name, libraryName, abi))

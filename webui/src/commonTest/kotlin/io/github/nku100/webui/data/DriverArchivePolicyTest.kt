@@ -78,6 +78,13 @@ class DriverArchivePolicyTest {
     )
 
     @Test
+    fun rejectsMetadataOnlyArchiveWhenLibraryNameAliasesMetaJson() = assertRejected(
+        listOf(validEntries[0]),
+        validMetadata + ("libraryName" to "./meta.json"),
+        DriverArchiveError.LIBRARY_NAME_MISMATCH,
+    )
+
+    @Test
     fun rejectsDuplicateLibraryNames() = assertRejected(
         validEntries + DriverFileInfo("another/libVkDriver.so", isRegularFile = true),
         validMetadata,
