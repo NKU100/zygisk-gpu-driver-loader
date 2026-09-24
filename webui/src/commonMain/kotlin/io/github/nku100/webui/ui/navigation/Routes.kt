@@ -15,5 +15,8 @@ sealed interface Route : NavKey {
     data object About : Route
 
     @Serializable
+    data object Drivers : Route
+
+    @Serializable
     data class AppProfile(val packageName: String) : Route
 }

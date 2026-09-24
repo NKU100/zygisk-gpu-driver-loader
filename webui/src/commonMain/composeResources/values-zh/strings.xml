@@ -34,6 +34,12 @@
     <string name="enable_for_this_app">为此应用启用</string>
     <string name="enable_for_this_app_summary">在应用启动时进行 Hook 并输出日志</string>
     <string name="section_log_settings">日志设置</string>
+    <string name="section_gpu_driver">GPU 驱动</string>
+    <string name="gpu_driver">此应用使用的驱动</string>
+    <string name="gpu_driver_summary">选择已导入的驱动，或使用系统驱动</string>
+    <string name="system_driver">系统驱动</string>
+    <string name="driver_unavailable">之前选择的驱动（不可用）</string>
+    <string name="driver_remote_process_note">此选择也适用于该应用的其他进程，包括 :remote。更改驱动后请重启应用。</string>
     <string name="log_level">日志级别</string>
     <string name="log_level_summary">输出的最低严重级别</string>
     <string name="dump_stack_trace">输出堆栈跟踪</string>
@@ -59,11 +65,35 @@
     <string name="bottom_bar_glass_effect">底栏液态玻璃效果</string>
     <string name="bottom_bar_glass_effect_summary">在悬浮底栏上启用液态玻璃效果</string>
     <string name="about">关于</string>
+    <string name="drivers_title">GPU 驱动</string>
+    <string name="drivers_settings_summary">导入和管理本地驱动 ZIP</string>
     <string name="about_summary">模块信息与版本</string>
     <string name="update_channel">更新渠道</string>
     <string name="update_channel_summary">选择模块管理器的更新渠道</string>
     <string name="update_channel_stable">稳定版</string>
     <string name="update_channel_beta">测试版</string>
+
+    <!-- DriversPage -->
+    <string name="import_driver_zip">导入驱动 ZIP</string>
+    <string name="import_driver_summary">选择本地 AdrenoTools ZIP</string>
+    <string name="driver_preview_unavailable">导入需要模块 Root 桥接</string>
+    <string name="driver_working">处理中…</string>
+    <string name="installed_drivers">已安装的驱动</string>
+    <string name="no_drivers">尚未导入驱动</string>
+    <string name="driver_list_error">无法加载驱动列表</string>
+    <string name="driver_storage_error">读取或保存 ZIP 时导入失败</string>
+    <string name="driver_unsupported_abi">此驱动不支持 arm64-v8a</string>
+    <string name="driver_invalid_zip">驱动 ZIP 或元数据无效</string>
+    <string name="driver_bound_cannot_delete">此驱动已分配给应用。请先在应用设置中切换为系统驱动。</string>
+    <string name="driver_not_found">驱动已不存在</string>
+    <string name="driver_delete_error">无法删除驱动</string>
+    <string name="driver_library">驱动库</string>
+    <string name="driver_abi">ABI</string>
+    <string name="driver_imported_at">导入时间</string>
+    <string name="driver_hash">SHA-256</string>
+    <string name="driver_unknown">未知</string>
+    <string name="delete_driver">删除驱动</string>
+    <string name="confirm_delete_driver">删除 %1$s？这会移除已导入的驱动文件。</string>
 
     <!-- AboutPage -->
     <string name="author">作者</string>

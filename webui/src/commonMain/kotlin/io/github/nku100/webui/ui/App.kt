@@ -25,6 +25,7 @@ import io.github.nku100.webui.ui.screen.MainViewModel
 import io.github.nku100.webui.ui.screen.apps.AppProfileActions
 import io.github.nku100.webui.ui.screen.apps.AppProfilePage
 import io.github.nku100.webui.ui.screen.apps.AppProfileUiState
+import io.github.nku100.webui.ui.screen.drivers.DriversPage
 import io.github.nku100.webui.ui.screen.settings.AboutPage
 import io.github.nku100.webui.ui.theme.AppTheme
 
@@ -75,6 +76,17 @@ fun App() {
                             enableBlur = uiState.config.enableBlur,
                         )
                     }
+                    entry<Route.Drivers> {
+                        DriversPage(
+                            state = uiState.drivers,
+                            config = uiState.config,
+                            onBack = { navigator.pop() },
+                            onImport = { viewModel.importDriver() },
+                            onDelete = { viewModel.deleteDriver(it) },
+                            bottomPadding = io.github.nku100.webui.platform.navigationBarBottomPadding(),
+                            enableBlur = uiState.config.enableBlur,
+                        )
+                    }
                     entry<Route.AppProfile> { key ->
                         val pkg = uiState.packages.find { it.packageName == key.packageName }
                             ?: return@entry
@@ -84,6 +96,7 @@ fun App() {
                                 packageInfo = pkg,
                                 settings = viewModel.getPackageSettings(key.packageName),
                                 isTargeted = uiState.config.targetPackages.contains(key.packageName),
+                                drivers = uiState.drivers.drivers,
                             ),
                             actions = AppProfileActions(
                                 onBack = { navigator.pop() },
@@ -92,6 +105,9 @@ fun App() {
                                 },
                                 onToggleTarget = { enabled ->
                                     viewModel.toggleTargetPackage(key.packageName, enabled)
+                                },
+                                onSelectDriver = { driverId ->
+                                    viewModel.setPackageDriver(key.packageName, driverId)
                                 },
                                 onLaunchApp = {
                                     scope.launch {

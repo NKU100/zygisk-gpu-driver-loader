@@ -42,4 +42,5 @@ data class SettingsActions(
     val onEnableFloatingBottomBarChange: (Boolean) -> Unit,
     val onEnableFloatingBottomBarBlurChange: (Boolean) -> Unit,
     val onOpenAbout: () -> Unit = {},
+    val onOpenDrivers: () -> Unit = {},
 )

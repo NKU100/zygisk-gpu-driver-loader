@@ -30,6 +30,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.rounded.Update
+import androidx.compose.material.icons.rounded.Memory
 import io.github.nku100.webui.platform.isAndroidPlatform
 import io.github.nku100.webui.ui.theme.ThemeMode
 import io.github.nku100.webui.ui.util.rememberDefaultBlurBackdrop
@@ -229,6 +230,26 @@ fun SettingsPage(
             }
 
             // About
+            item {
+                Card(
+                    modifier = Modifier.padding(top = 12.dp).fillMaxWidth(),
+                ) {
+                    ArrowPreference(
+                        title = stringResource(Res.string.drivers_title),
+                        summary = stringResource(Res.string.drivers_settings_summary),
+                        startAction = {
+                            Icon(
+                                Icons.Rounded.Memory,
+                                modifier = Modifier.padding(end = 6.dp),
+                                contentDescription = stringResource(Res.string.drivers_title),
+                                tint = colorScheme.onBackground,
+                            )
+                        },
+                        onClick = actions.onOpenDrivers,
+                    )
+                }
+            }
+
             item {
                 Card(
                     modifier = Modifier

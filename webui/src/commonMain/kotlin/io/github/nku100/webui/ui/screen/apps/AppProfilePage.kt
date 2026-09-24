@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.nku100.webui.data.PackageSettings
+import io.github.nku100.webui.data.DriverInfo
 import io.github.nku100.webui.platform.PackageInfo
 import io.github.nku100.webui.platform.isAndroidPlatform
 import io.github.nku100.webui.ui.component.AppIconImage
@@ -65,12 +66,14 @@ data class AppProfileUiState(
     val packageInfo: PackageInfo,
     val settings: PackageSettings,
     val isTargeted: Boolean,
+    val drivers: List<DriverInfo> = emptyList(),
 )
 
 data class AppProfileActions(
     val onBack: () -> Unit,
     val onSaveSettings: (PackageSettings) -> Unit,
     val onToggleTarget: (enabled: Boolean) -> Unit,
+    val onSelectDriver: (String) -> Unit = {},
     val onLaunchApp: () -> Unit = {},
     val onForceStopApp: () -> Unit = {},
     val onRestartApp: () -> Unit = {},
@@ -219,6 +222,38 @@ fun AppProfilePage(
                         onCheckedChange = { actions.onToggleTarget(it) },
                     )
                 }
+            }
+
+            // GPU driver
+            item {
+                SmallTitle(text = stringResource(Res.string.section_gpu_driver))
+            }
+            item {
+                Card(
+                    modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp),
+                ) {
+                    val missingDriver = settings.driverId.isNotEmpty() && state.drivers.none { it.driverId == settings.driverId }
+                    val options = listOf(stringResource(Res.string.system_driver)) +
+                        (if (missingDriver) listOf(stringResource(Res.string.driver_unavailable)) else emptyList()) +
+                        state.drivers.map { it.name }
+                    val ids = listOf("") + (if (missingDriver) listOf(settings.driverId) else emptyList()) +
+                        state.drivers.map { it.driverId }
+                    OverlayDropdownPreference(
+                        title = stringResource(Res.string.gpu_driver),
+                        summary = stringResource(Res.string.gpu_driver_summary),
+                        items = options,
+                        selectedIndex = ids.indexOf(settings.driverId).coerceAtLeast(0),
+                        onSelectedIndexChange = { index ->
+                            actions.onSelectDriver(ids[index])
+                        },
+                    )
+                }
+                Text(
+                    text = stringResource(Res.string.driver_remote_process_note),
+                    modifier = Modifier.padding(horizontal = 28.dp, vertical = 4.dp),
+                    fontSize = 13.sp,
+                    color = colorScheme.onSurfaceVariantSummary,
+                )
             }
 
             // Log settings section

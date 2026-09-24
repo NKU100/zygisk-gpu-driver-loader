@@ -34,6 +34,12 @@
     <string name="enable_for_this_app">Enable for this app</string>
     <string name="enable_for_this_app_summary">Hook this app on launch and output log</string>
     <string name="section_log_settings">Log Settings</string>
+    <string name="section_gpu_driver">GPU Driver</string>
+    <string name="gpu_driver">Driver for this app</string>
+    <string name="gpu_driver_summary">Choose an imported driver or use the system driver</string>
+    <string name="system_driver">System driver</string>
+    <string name="driver_unavailable">Previously selected driver (unavailable)</string>
+    <string name="driver_remote_process_note">This choice also applies to this app\'s other processes, including :remote. Restart the app after changing drivers.</string>
     <string name="log_level">Log level</string>
     <string name="log_level_summary">Minimum severity level to output</string>
     <string name="dump_stack_trace">Dump stack trace</string>
@@ -59,11 +65,35 @@
     <string name="bottom_bar_glass_effect">Bottom Bar Glass Effect</string>
     <string name="bottom_bar_glass_effect_summary">Enable glass blur on floating bottom bar</string>
     <string name="about">About</string>
+    <string name="drivers_title">GPU Drivers</string>
+    <string name="drivers_settings_summary">Import and manage local driver ZIPs</string>
     <string name="about_summary">Module info and version</string>
     <string name="update_channel">Update Channel</string>
     <string name="update_channel_summary">Choose the update channel for module manager</string>
     <string name="update_channel_stable">Stable</string>
     <string name="update_channel_beta">Beta</string>
+
+    <!-- DriversPage -->
+    <string name="import_driver_zip">Import driver ZIP</string>
+    <string name="import_driver_summary">Select a local AdrenoTools ZIP</string>
+    <string name="driver_preview_unavailable">Import requires the module\'s root bridge</string>
+    <string name="driver_working">Working…</string>
+    <string name="installed_drivers">Installed drivers</string>
+    <string name="no_drivers">No drivers imported yet</string>
+    <string name="driver_list_error">Could not load drivers</string>
+    <string name="driver_storage_error">Import failed while reading or saving the ZIP</string>
+    <string name="driver_unsupported_abi">This driver does not support arm64-v8a</string>
+    <string name="driver_invalid_zip">Invalid driver ZIP or metadata</string>
+    <string name="driver_bound_cannot_delete">Assigned to an app. Select the system driver there before deleting.</string>
+    <string name="driver_not_found">Driver no longer exists</string>
+    <string name="driver_delete_error">Could not delete driver</string>
+    <string name="driver_library">Library</string>
+    <string name="driver_abi">ABI</string>
+    <string name="driver_imported_at">Imported</string>
+    <string name="driver_hash">SHA-256</string>
+    <string name="driver_unknown">Unknown</string>
+    <string name="delete_driver">Delete driver</string>
+    <string name="confirm_delete_driver">Delete %1$s? This removes its imported files.</string>
 
     <!-- AboutPage -->
     <string name="author">Author</string>

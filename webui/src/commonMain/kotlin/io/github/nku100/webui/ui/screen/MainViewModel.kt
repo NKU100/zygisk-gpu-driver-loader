@@ -5,6 +5,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.nku100.webui.ModuleInfo
 import io.github.nku100.webui.data.ConfigRepository
+import io.github.nku100.webui.data.DriverArchiveError
+import io.github.nku100.webui.data.DriverDeleteResult
+import io.github.nku100.webui.data.DriverImportResult
+import io.github.nku100.webui.data.DriverRepository
 import io.github.nku100.webui.data.ModuleConfig
 import io.github.nku100.webui.data.PackageSettings
 import io.github.nku100.webui.platform.PackageInfo
@@ -12,6 +16,8 @@ import io.github.nku100.webui.platform.PlatformBridge
 import io.github.nku100.webui.platform.awaitNextFrame
 import io.github.nku100.webui.platform.hasPlatformApi
 import io.github.nku100.webui.ui.component.SearchStatus
+import io.github.nku100.webui.ui.screen.drivers.DriversUiState
+import io.github.nku100.webui.ui.screen.drivers.withPackageDriver
 import io.github.nku100.webui.ui.theme.ThemeMode
 import io.github.nku100.webui.ui.screen.settings.UpdateChannel
 import kotlinx.coroutines.Dispatchers
@@ -30,6 +36,7 @@ import kotlin.time.Duration.Companion.milliseconds
 @Immutable
 data class MainUiState(
     val config: ModuleConfig = ModuleConfig(),
+    val drivers: DriversUiState = DriversUiState(),
     val packages: List<PackageInfo> = emptyList(),
     val isLoading: Boolean = true,
     val hasLoaded: Boolean = false,
@@ -74,6 +81,13 @@ class MainViewModel : ViewModel() {
         _uiState.update { it.copy(isLoading = true) }
         try {
             val config = ConfigRepository.load()
+            val drivers = try {
+                DriversUiState(drivers = DriverRepository.listDrivers())
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                DriversUiState(loadFailed = true)
+            }
             val rawPackages = PlatformBridge.listPackages()
             val targets = config.targetPackages.toSet()
             val packages = withContext(Dispatchers.Default) { sortPackages(rawPackages, targets) }
@@ -88,6 +102,7 @@ class MainViewModel : ViewModel() {
             _uiState.update {
                 it.copy(
                     config = config,
+                    drivers = drivers,
                     packages = packages,
                     isLoading = false,
                     hasLoaded = true,
@@ -152,6 +167,7 @@ class MainViewModel : ViewModel() {
                     enabled = true,
                     enableFloatingBottomBar = true,
                 ),
+                drivers = DriversUiState(canImport = false),
                 packages = sortPackages(rawPackages, targets),
                 isLoading = false,
                 hasLoaded = true,
@@ -263,8 +279,60 @@ class MainViewModel : ViewModel() {
 
     fun savePackageSettings(packageName: String, settings: PackageSettings) {
         val config = _uiState.value.config
-        val newMap = config.packageSettings + (packageName to settings)
+        val currentDriverId = config.packageSettings[packageName]?.driverId.orEmpty()
+        val newMap = config.packageSettings + (packageName to settings.copy(driverId = currentDriverId))
         saveConfig(config.copy(packageSettings = newMap))
+    }
+
+    fun setPackageDriver(packageName: String, driverId: String) {
+        val current = _uiState.value
+        val updated = current.config.withPackageDriver(packageName, driverId, current.drivers.drivers) ?: return
+        if (updated == current.config || !hasPlatformApi()) return
+        saveConfig(updated)
+    }
+
+    fun importDriver(): Job = viewModelScope.launch {
+        val current = _uiState.value.drivers
+        if (current.isBusy || !current.canImport) return@launch
+        _uiState.update { it.copy(drivers = current.copy(isBusy = true, importError = null, deleteError = null)) }
+        try {
+            when (val result = DriverRepository.importDriverZip()) {
+                is DriverImportResult.Accepted -> {
+                    val installed = DriverRepository.listDrivers()
+                    _uiState.update { it.copy(drivers = it.drivers.copy(drivers = installed, loadFailed = false)) }
+                }
+                is DriverImportResult.Rejected -> if (result.error != DriverArchiveError.CANCELLED) {
+                    _uiState.update { it.copy(drivers = it.drivers.afterImportFailure(result.error)) }
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            _uiState.update { it.copy(drivers = it.drivers.afterImportFailure(DriverArchiveError.STORAGE_ERROR)) }
+        } finally {
+            _uiState.update { it.copy(drivers = it.drivers.copy(isBusy = false)) }
+        }
+    }
+
+    fun deleteDriver(driverId: String): Job = viewModelScope.launch {
+        val current = _uiState.value.drivers
+        if (current.isBusy || current.isBound(driverId, _uiState.value.config)) return@launch
+        _uiState.update { it.copy(drivers = current.copy(isBusy = true, importError = null, deleteError = null)) }
+        try {
+            when (val result = DriverRepository.deleteDriver(driverId)) {
+                DriverDeleteResult.DELETED -> {
+                    val installed = DriverRepository.listDrivers()
+                    _uiState.update { it.copy(drivers = it.drivers.copy(drivers = installed, loadFailed = false)) }
+                }
+                else -> _uiState.update { it.copy(drivers = it.drivers.copy(deleteError = result)) }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            _uiState.update { it.copy(drivers = it.drivers.copy(deleteError = DriverDeleteResult.IO_ERROR)) }
+        } finally {
+            _uiState.update { it.copy(drivers = it.drivers.copy(isBusy = false)) }
+        }
     }
 
     fun getPackageSettings(packageName: String): PackageSettings =

@@ -47,6 +47,7 @@ fun PlaceholderPage(
                     onEnableFloatingBottomBarChange = { viewModel.setEnableFloatingBottomBar(it) },
                     onEnableFloatingBottomBarBlurChange = { viewModel.setEnableFloatingBottomBarBlur(it) },
                     onOpenAbout = { navigator.push(Route.About) },
+                    onOpenDrivers = { navigator.push(Route.Drivers) },
                 ),
                 bottomPadding = bottomPadding,
                 enableBlur = config.enableBlur,
