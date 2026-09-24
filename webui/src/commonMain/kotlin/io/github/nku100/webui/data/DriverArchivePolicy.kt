@@ -72,5 +72,5 @@ object DriverArchivePolicy {
     }
 
     private fun stableDriverId(archiveSha256: String, libraryName: String, abi: String): String =
-        "${archiveSha256.lowercase()}:$abi:${libraryName.encodeToByteArray().joinToString("") { byte -> "%02x".format(byte) }}"
+        "${archiveSha256.lowercase()}:$abi:${libraryName.encodeToByteArray().joinToString("") { byte -> byte.toUByte().toString(16).padStart(2, '0') }}"
 }

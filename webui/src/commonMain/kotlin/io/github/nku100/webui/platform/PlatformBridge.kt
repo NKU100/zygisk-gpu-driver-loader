@@ -1,6 +1,9 @@
 package io.github.nku100.webui.platform
 
 import androidx.compose.runtime.Stable
+import io.github.nku100.webui.data.DriverDeleteResult
+import io.github.nku100.webui.data.DriverImportResult
+import io.github.nku100.webui.data.DriverInfo
 
 /**
  * Result of executing a shell command.
@@ -45,6 +48,9 @@ expect fun openUrl(url: String)
  * - Android: executes commands via root shell
  */
 expect object PlatformBridge {
+    suspend fun importDriverZip(): DriverImportResult
+    suspend fun listDrivers(): List<DriverInfo>
+    suspend fun deleteDriver(driverId: String): DriverDeleteResult
     /** Execute a shell command with root privileges. */
     suspend fun exec(command: String): ShellResult
 

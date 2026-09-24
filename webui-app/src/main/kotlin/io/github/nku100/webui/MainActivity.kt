@@ -11,6 +11,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         PlatformBridge.appContext = applicationContext
+        PlatformBridge.appActivity = this
         PlatformBridge.toastCallback = { msg ->
             runOnUiThread { Toast.makeText(this, msg, Toast.LENGTH_SHORT).show() }
         }
@@ -18,6 +19,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        if (PlatformBridge.appActivity === this) PlatformBridge.appActivity = null
         PlatformBridge.toastCallback = null
         super.onDestroy()
     }

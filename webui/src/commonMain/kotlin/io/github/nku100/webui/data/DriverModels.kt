@@ -6,6 +6,8 @@ data class DriverInfo(
     val name: String,
     val libraryName: String,
     val abi: String,
+    val importedAtEpochMillis: Long = 0,
+    val archiveSha256: String = "",
 )
 
 /** ZIP entry information needed to validate an archive without extracting it. */
@@ -22,6 +24,10 @@ sealed interface DriverImportResult {
 }
 
 enum class DriverArchiveError {
+    CANCELLED,
+    INVALID_ZIP,
+    TRANSFER_FAILED,
+    STORAGE_ERROR,
     INVALID_ARCHIVE_HASH,
     INVALID_ENTRY_PATH,
     SYMBOLIC_LINK,
