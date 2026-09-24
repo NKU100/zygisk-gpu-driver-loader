@@ -83,6 +83,7 @@ fun App() {
                             onBack = { navigator.pop() },
                             onImport = { viewModel.importDriver() },
                             onDelete = { viewModel.deleteDriver(it) },
+                            onRetryList = { viewModel.refreshDrivers() },
                             bottomPadding = io.github.nku100.webui.platform.navigationBarBottomPadding(),
                             enableBlur = uiState.config.enableBlur,
                         )

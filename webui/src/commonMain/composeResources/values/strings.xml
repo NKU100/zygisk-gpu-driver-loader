@@ -81,6 +81,8 @@
     <string name="installed_drivers">Installed drivers</string>
     <string name="no_drivers">No drivers imported yet</string>
     <string name="driver_list_error">Could not load drivers</string>
+    <string name="driver_list_stale">Driver changes were saved, but the list could not be refreshed. It may be out of date.</string>
+    <string name="retry_driver_list">Retry loading drivers</string>
     <string name="driver_storage_error">Import failed while reading or saving the ZIP</string>
     <string name="driver_unsupported_abi">This driver does not support arm64-v8a</string>
     <string name="driver_invalid_zip">Invalid driver ZIP or metadata</string>

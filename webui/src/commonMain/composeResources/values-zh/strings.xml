@@ -81,6 +81,8 @@
     <string name="installed_drivers">已安装的驱动</string>
     <string name="no_drivers">尚未导入驱动</string>
     <string name="driver_list_error">无法加载驱动列表</string>
+    <string name="driver_list_stale">驱动变更已保存，但未能刷新列表。列表可能不是最新的。</string>
+    <string name="retry_driver_list">重试加载驱动列表</string>
     <string name="driver_storage_error">读取或保存 ZIP 时导入失败</string>
     <string name="driver_unsupported_abi">此驱动不支持 arm64-v8a</string>
     <string name="driver_invalid_zip">驱动 ZIP 或元数据无效</string>

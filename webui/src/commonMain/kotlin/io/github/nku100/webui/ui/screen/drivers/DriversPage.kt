@@ -60,6 +60,7 @@ fun DriversPage(
     onBack: () -> Unit,
     onImport: () -> Unit,
     onDelete: (String) -> Unit,
+    onRetryList: () -> Unit,
     bottomPadding: Dp,
     enableBlur: Boolean,
 ) {
@@ -106,11 +107,22 @@ fun DriversPage(
                     )
                 }
             }
-            if (state.isBusy) {
+            if (state.isBusy || state.listStatus == DriverListStatus.LOADING) {
                 item { Text(stringResource(Res.string.driver_working), modifier = Modifier.padding(horizontal = 24.dp)) }
             }
-            if (state.loadFailed) {
-                item { Text(stringResource(Res.string.driver_list_error), modifier = Modifier.padding(horizontal = 24.dp), color = colorScheme.error) }
+            if (state.canRetryList) {
+                item {
+                    Column(modifier = Modifier.padding(horizontal = 24.dp)) {
+                        Text(
+                            if (state.listStatus == DriverListStatus.UNAVAILABLE) stringResource(Res.string.driver_list_error)
+                            else stringResource(Res.string.driver_list_stale),
+                            color = colorScheme.error,
+                        )
+                        TextButton(enabled = !state.isBusy, onClick = onRetryList) {
+                            Text(stringResource(Res.string.retry_driver_list))
+                        }
+                    }
+                }
             }
             state.importError?.let { error ->
                 item { Text(importErrorText(error), modifier = Modifier.padding(horizontal = 24.dp), color = colorScheme.error) }
@@ -119,7 +131,7 @@ fun DriversPage(
                 item { Text(deleteErrorText(error), modifier = Modifier.padding(horizontal = 24.dp), color = colorScheme.error) }
             }
             item { SmallTitle(text = stringResource(Res.string.installed_drivers)) }
-            if (state.drivers.isEmpty()) {
+            if (state.showEmptyState) {
                 item { Text(stringResource(Res.string.no_drivers), modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp), color = colorScheme.onSurfaceVariantSummary) }
             }
             items(state.drivers.size) { index ->

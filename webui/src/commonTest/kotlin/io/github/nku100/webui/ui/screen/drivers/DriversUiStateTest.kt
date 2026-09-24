@@ -60,4 +60,43 @@ class DriversUiStateTest {
         assertEquals(listOf(installed), afterFailure.drivers)
         assertEquals(DriverArchiveError.INVALID_ZIP, afterFailure.importError)
     }
+
+    @Test
+    fun failedInitialListReadDoesNotClaimThereAreNoDriversAndCanRecover() {
+        val failed = DriversUiState().afterListFailure()
+
+        assertEquals(DriverListStatus.UNAVAILABLE, failed.listStatus)
+        assertFalse(failed.showEmptyState)
+        assertTrue(failed.canRetryList)
+
+        val recovered = failed.withVerifiedList(emptyList())
+        assertEquals(DriverListStatus.FRESH, recovered.listStatus)
+        assertTrue(recovered.showEmptyState)
+    }
+
+    @Test
+    fun successfulImportRemainsVisibleWhenFollowUpListReadFails() {
+        val imported = DriverInfo("driver-b", "Driver B", "libb.so", "arm64-v8a", 1234, "abcdef")
+        val state = DriversUiState(drivers = listOf(installed), listStatus = DriverListStatus.FRESH)
+
+        val afterRefreshFailure = state.afterSuccessfulImport(imported).afterListFailure()
+
+        assertEquals(listOf(installed, imported), afterRefreshFailure.drivers)
+        assertEquals(DriverListStatus.STALE, afterRefreshFailure.listStatus)
+        assertNull(afterRefreshFailure.importError)
+        assertTrue(afterRefreshFailure.canRetryList)
+    }
+
+    @Test
+    fun successfulDeletionRemainsVisibleWhenFollowUpListReadFails() {
+        val state = DriversUiState(drivers = listOf(installed), listStatus = DriverListStatus.FRESH)
+
+        val afterRefreshFailure = state.afterSuccessfulDelete("driver-a").afterListFailure()
+
+        assertTrue(afterRefreshFailure.drivers.isEmpty())
+        assertFalse(afterRefreshFailure.showEmptyState)
+        assertEquals(DriverListStatus.STALE, afterRefreshFailure.listStatus)
+        assertNull(afterRefreshFailure.deleteError)
+        assertTrue(afterRefreshFailure.canRetryList)
+    }
 }
