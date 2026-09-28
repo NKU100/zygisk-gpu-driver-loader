@@ -1,0 +1,63 @@
+import com.android.build.api.dsl.ApplicationExtension
+
+plugins {
+    alias(libs.plugins.agp.app) apply false
+    alias(libs.plugins.kotlin.multiplatform) apply false
+    alias(libs.plugins.kotlin.serialization) apply false
+    alias(libs.plugins.compose.multiplatform) apply false
+    alias(libs.plugins.compose.compiler) apply false
+}
+
+apply(from = "module.gradle.kts")
+
+val moduleRepo by extra(
+    providers.exec { commandLine("git", "remote", "get-url", "origin") }
+        .standardOutput.asText.map { url ->
+            val trimmed = url.trim()
+            val match = Regex("""(?:https://github\.com/|git@github\.com:)([^/]+)/([^/]+?)(?:\.git)?$""").find(trimmed)
+            if (match != null) "https://github.com/${match.groupValues[1]}/${match.groupValues[2]}" else trimmed
+        }.getOrElse("")
+)
+
+val androidMinSdkVersion by extra(26)
+val androidTargetSdkVersion by extra(36)
+val androidCompileSdkVersion by extra(37)
+val androidBuildToolsVersion by extra("36.0.0")
+val androidCompileNdkVersion by extra("29.0.14206865")
+val androidSourceCompatibility by extra(JavaVersion.VERSION_17)
+val androidTargetCompatibility by extra(JavaVersion.VERSION_17)
+
+tasks.register("Delete", Delete::class) {
+    delete(rootProject.layout.buildDirectory)
+}
+
+fun Project.configureBaseExtension() {
+    extensions.findByType(ApplicationExtension::class)?.run {
+        namespace = "io.github.nku100.zygisk.module.sample"
+        compileSdk = androidCompileSdkVersion
+        ndkVersion = androidCompileNdkVersion
+        buildToolsVersion = androidBuildToolsVersion
+
+        defaultConfig {
+            minSdk = androidMinSdkVersion
+        }
+
+        compileOptions {
+            sourceCompatibility = androidSourceCompatibility
+            targetCompatibility = androidTargetCompatibility
+        }
+    }
+
+}
+
+subprojects {
+    plugins.withId("com.android.application") {
+        configureBaseExtension()
+    }
+    plugins.withType(JavaPlugin::class.java) {
+        extensions.configure(JavaPluginExtension::class.java) {
+            sourceCompatibility = androidSourceCompatibility
+            targetCompatibility = androidTargetCompatibility
+        }
+    }
+}

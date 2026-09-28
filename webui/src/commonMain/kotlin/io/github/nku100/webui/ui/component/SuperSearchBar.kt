@@ -1,0 +1,420 @@
+package io.github.nku100.webui.ui.component
+import org.jetbrains.compose.resources.stringResource
+import zygisk_module_webui_template.webui.generated.resources.*
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.constrainHeight
+import androidx.compose.ui.unit.constrainWidth
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.max
+import androidx.compose.ui.zIndex
+import androidx.navigationevent.NavigationEventInfo
+import androidx.navigationevent.compose.NavigationBackHandler
+import androidx.navigationevent.compose.rememberNavigationEventState
+import io.github.nku100.webui.ui.util.defaultBlurEffect
+import top.yukonga.miuix.kmp.blur.LayerBackdrop
+import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.InputField
+import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.basic.Search
+import top.yukonga.miuix.kmp.icon.basic.SearchCleanup
+import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
+
+/**
+ * Ported from KernelSU: SuperSearchBar.kt
+ * Full-screen search panel with collapse/expand animation.
+ */
+@Composable
+fun SearchStatus.SearchBox(
+    onSearchStatusChange: (SearchStatus) -> Unit,
+    collapseBar: @Composable (SearchStatus, () -> Dp, PaddingValues) -> Unit = { searchStatus, topPadding, innerPadding ->
+        SearchBarFake(searchStatus.label, topPadding, innerPadding)
+    },
+    searchBarTopPadding: () -> Dp = { 12.dp },
+    contentPadding: PaddingValues = PaddingValues(0.dp),
+    blurBackdrop: LayerBackdrop? = null,
+    enableBlur: Boolean = false,
+    content: @Composable (MutableState<Dp>) -> Unit
+) {
+    val searchStatus = this
+    val density = LocalDensity.current
+
+    val offsetY = remember { mutableIntStateOf(0) }
+    val boxHeight = remember { mutableStateOf(0.dp) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .zIndex(10f)
+            .alpha(if (searchStatus.isCollapsed()) 1f else 0f)
+            .offset(y = contentPadding.calculateTopPadding())
+            .onGloballyPositioned {
+                it.positionInWindow().y.apply {
+                    offsetY.intValue = (this@apply * 0.9).toInt()
+                    with(density) {
+                        val newOffsetY = this@apply.toDp()
+                        val newBoxHeight = it.size.height.toDp()
+                        if (searchStatus.offsetY != newOffsetY) {
+                            onSearchStatusChange(searchStatus.copy(offsetY = newOffsetY))
+                        }
+                        boxHeight.value = newBoxHeight
+                    }
+                }
+            }
+            .pointerInput(Unit) {
+                detectTapGestures { onSearchStatusChange(searchStatus.copy(current = SearchStatus.Status.EXPANDING)) }
+            }
+            .then(
+                if (blurBackdrop != null) {
+                    Modifier.defaultBlurEffect(blurBackdrop)
+                } else {
+                    Modifier.background(colorScheme.surface)
+                }
+            )
+    ) {
+        collapseBar(searchStatus, searchBarTopPadding, contentPadding)
+    }
+    Box {
+        AnimatedVisibility(
+            visible = searchStatus.shouldCollapsed(),
+            enter = fadeIn(tween(300, easing = LinearOutSlowInEasing)) + slideInVertically(
+                tween(300, easing = LinearOutSlowInEasing)
+            ) { -offsetY.intValue },
+            exit = fadeOut(tween(300, easing = LinearOutSlowInEasing)) + slideOutVertically(
+                tween(300, easing = LinearOutSlowInEasing)
+            ) { -offsetY.intValue }
+        ) {
+            content(boxHeight)
+        }
+    }
+}
+
+@Composable
+fun SearchStatus.SearchPager(
+    onSearchStatusChange: (SearchStatus) -> Unit,
+    defaultResult: @Composable () -> Unit,
+    expandBar: @Composable (SearchStatus, (SearchStatus) -> Unit, () -> Dp) -> Unit = { searchStatus, onStatusChange, padding ->
+        SearchBar(searchStatus, onStatusChange, padding)
+    },
+    searchBarTopPadding: () -> Dp = { 12.dp },
+    result: @Composable () -> Unit
+) {
+    val searchStatus = this
+    val systemBarsPadding = if (io.github.nku100.webui.platform.isAndroidPlatform) {
+        WindowInsets.systemBars.asPaddingValues().calculateTopPadding()
+    } else {
+        io.github.nku100.webui.platform.statusBarTopPadding()
+    }
+    val topPadding by animateDpAsState(
+        targetValue = if (searchStatus.shouldExpand()) {
+            systemBarsPadding + 5.dp
+        } else {
+            max(searchStatus.offsetY, 0.dp)
+        },
+        animationSpec = tween(300, easing = LinearOutSlowInEasing),
+        label = "SearchPagerTopPadding"
+    ) {
+        onSearchStatusChange(searchStatus.onAnimationComplete())
+    }
+    val surfaceAlpha by animateFloatAsState(
+        if (searchStatus.shouldExpand()) 1f else 0f,
+        animationSpec = tween(200, easing = FastOutSlowInEasing),
+        label = "SearchPagerSurfaceAlpha"
+    )
+    val surfaceColor = colorScheme.surface
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(5f)
+            .drawBehind { drawRect(surfaceColor.copy(alpha = surfaceAlpha)) }
+            .semantics { onClick { false } }
+            .then(
+                if (!searchStatus.isCollapsed()) {
+                    Modifier
+                        .pointerInput(Unit) { detectTapGestures { } }
+                        .draggable(
+                            state = rememberDraggableState { },
+                            orientation = Orientation.Horizontal,
+                        )
+                } else {
+                    Modifier
+                }
+            )
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(top = topPadding)
+                .then(
+                    if (!searchStatus.isCollapsed()) Modifier.background(colorScheme.surface)
+                    else Modifier
+                ),
+            horizontalArrangement = Arrangement.Start,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (!searchStatus.isCollapsed()) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .background(colorScheme.surface)
+                ) {
+                    expandBar(searchStatus, onSearchStatusChange, searchBarTopPadding)
+                }
+            }
+            AnimatedVisibility(
+                visible = searchStatus.isExpand() || searchStatus.isAnimatingExpand(),
+                enter = expandHorizontally() + slideInHorizontally(initialOffsetX = { it }),
+                exit = shrinkHorizontally() + slideOutHorizontally(targetOffsetX = { it })
+            ) {
+                Text(
+                    text = stringResource(Res.string.cancel),
+                    fontWeight = FontWeight.Bold,
+                    color = colorScheme.primary,
+                    modifier = Modifier
+                        .padding(start = 4.dp, end = 16.dp, bottom = 6.dp)
+                        .deferredTopPadding(searchBarTopPadding)
+                        .clickable(
+                            interactionSource = null,
+                            enabled = searchStatus.isExpand(),
+                            indication = null
+                        ) {
+                            onSearchStatusChange(
+                                searchStatus.copy(
+                                    searchText = "",
+                                    current = SearchStatus.Status.COLLAPSING
+                                )
+                            )
+                        }
+                )
+                run {
+                    val navEventState = rememberNavigationEventState(NavigationEventInfo.None)
+                    NavigationBackHandler(
+                        state = navEventState,
+                        isBackEnabled = true,
+                        onBackCompleted = {
+                            onSearchStatusChange(
+                                searchStatus.copy(
+                                    searchText = "",
+                                    current = SearchStatus.Status.COLLAPSING
+                                )
+                            )
+                        }
+                    )
+                }
+            }
+        }
+        AnimatedVisibility(
+            visible = searchStatus.isExpand(),
+            modifier = Modifier
+                .fillMaxSize()
+                .zIndex(1f),
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
+            when (searchStatus.resultStatus) {
+                SearchStatus.ResultStatus.DEFAULT -> defaultResult()
+                SearchStatus.ResultStatus.EMPTY -> {}
+                SearchStatus.ResultStatus.LOAD -> {}
+                SearchStatus.ResultStatus.SHOW -> result()
+            }
+        }
+    }
+}
+
+@Composable
+fun SearchBar(
+    searchStatus: SearchStatus,
+    onSearchStatusChange: (SearchStatus) -> Unit,
+    searchBarTopPadding: () -> Dp = { 12.dp },
+) {
+    val focusRequester = remember { FocusRequester() }
+    var expanded by rememberSaveable { mutableStateOf(false) }
+
+    InputField(
+        query = searchStatus.searchText,
+        onQueryChange = { onSearchStatusChange(searchStatus.copy(searchText = it)) },
+        label = "",
+        leadingIcon = {
+            Icon(
+                imageVector = MiuixIcons.Basic.Search,
+                contentDescription = stringResource(Res.string.search),
+                modifier = Modifier
+                    .size(44.dp)
+                    .padding(start = 16.dp, end = 8.dp),
+                tint = colorScheme.onSurfaceContainerHigh,
+            )
+        },
+        trailingIcon = {
+            AnimatedVisibility(
+                searchStatus.searchText.isNotEmpty(),
+                enter = fadeIn() + scaleIn(),
+                exit = fadeOut() + scaleOut(),
+            ) {
+                Icon(
+                    imageVector = MiuixIcons.Basic.SearchCleanup,
+                    tint = colorScheme.onSurface,
+                    contentDescription = stringResource(Res.string.clear),
+                    modifier = Modifier
+                        .size(44.dp)
+                        .padding(start = 8.dp, end = 16.dp)
+                        .clickable(
+                            interactionSource = null,
+                            indication = null
+                        ) {
+                            onSearchStatusChange(searchStatus.copy(searchText = ""))
+                        },
+                )
+            }
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp)
+            .deferredTopPadding(searchBarTopPadding)
+            .padding(bottom = 6.dp)
+            .focusRequester(focusRequester),
+        onSearch = { },
+        expanded = searchStatus.shouldExpand(),
+        onExpandedChange = {
+            onSearchStatusChange(
+                searchStatus.copy(
+                    current = if (it) SearchStatus.Status.EXPANDED else SearchStatus.Status.COLLAPSED
+                )
+            )
+        }
+    )
+    LaunchedEffect(Unit) {
+        if (!expanded && searchStatus.shouldExpand()) {
+            focusRequester.requestFocus()
+            expanded = true
+        }
+    }
+}
+
+@Composable
+fun SearchBarFake(
+    label: String,
+    searchBarTopPadding: () -> Dp = { 12.dp },
+    innerPadding: PaddingValues = PaddingValues(0.dp),
+    enableBlur: Boolean = false,
+) {
+    val layoutDirection = LocalLayoutDirection.current
+    InputField(
+        query = "",
+        onQueryChange = { },
+        label = label,
+        leadingIcon = {
+            Icon(
+                imageVector = MiuixIcons.Basic.Search,
+                contentDescription = stringResource(Res.string.search),
+                modifier = Modifier
+                    .size(44.dp)
+                    .padding(start = 16.dp, end = 8.dp),
+                tint = colorScheme.onSurfaceContainerHigh,
+            )
+        },
+        modifier = Modifier
+            .let { if (!enableBlur) it.background(colorScheme.surface) else it }
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp)
+            .padding(
+                start = innerPadding.calculateStartPadding(layoutDirection),
+                end = innerPadding.calculateEndPadding(layoutDirection)
+            )
+            .deferredTopPadding(searchBarTopPadding)
+            .padding(bottom = 6.dp),
+        onSearch = { },
+        enabled = false,
+        expanded = false,
+        onExpandedChange = { }
+    )
+}
+
+/**
+ * Deferred top padding: reads the padding value in the layout phase,
+ * avoiding recomposition on every scroll tick.
+ * Ported from KernelSU: SuperSearchBar.kt deferredTopPadding.
+ */
+internal fun Modifier.deferredTopPadding(top: () -> Dp): Modifier = layout { measurable, constraints ->
+    val topPx = (top().value * density).toInt().coerceAtLeast(0)
+    val placeable = measurable.measure(
+        Constraints(
+            minWidth = constraints.minWidth,
+            maxWidth = constraints.maxWidth,
+            minHeight = (constraints.minHeight - topPx).coerceAtLeast(0),
+            maxHeight = if (constraints.maxHeight == Constraints.Infinity) {
+                Constraints.Infinity
+            } else {
+                (constraints.maxHeight - topPx).coerceAtLeast(0)
+            }
+        )
+    )
+    val width = constraints.constrainWidth(placeable.width)
+    val height = constraints.constrainHeight(placeable.height + topPx)
+    layout(width, height) {
+        placeable.place(0, topPx)
+    }
+}

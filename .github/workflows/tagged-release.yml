@@ -1,0 +1,16 @@
+name: Tagged Release
+on:
+  push:
+    tags:
+      - 'v**'
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  tagged-release:
+    name: Tagged Release
+    uses: ./.github/workflows/build.yml
+    with:
+      release-type: tagged

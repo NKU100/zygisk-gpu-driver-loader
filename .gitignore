@@ -1,0 +1,26 @@
+# IDE & OS
+/.idea
+*.iml
+.DS_Store
+
+# Gradle
+.gradle
+/build
+/local.properties
+
+# Android NDK
+.cxx
+
+# Kotlin/Wasm tooling
+.kotlin/
+kotlin-js-store/
+node_modules
+
+# Build outputs
+module/build/
+module/release/
+webui/build/
+webui-app/build/
+
+# Temporary agent execution plans
+/docs/superpowers/plans/

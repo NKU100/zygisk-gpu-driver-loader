@@ -1,0 +1,315 @@
+package io.github.nku100.webui.ui.screen.apps
+import org.jetbrains.compose.resources.stringResource
+import zygisk_module_webui_template.webui.generated.resources.*
+
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.add
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import io.github.nku100.webui.data.PackageSettings
+import io.github.nku100.webui.platform.PackageInfo
+import io.github.nku100.webui.platform.isAndroidPlatform
+import io.github.nku100.webui.ui.component.AppIconImage
+import io.github.nku100.webui.ui.util.rememberDefaultBlurBackdrop
+import io.github.nku100.webui.ui.util.topBarDefaultWindowInsetsPadding
+import io.github.nku100.webui.ui.util.topBarModifier
+import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.DropdownImpl
+import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.ListPopupColumn
+import top.yukonga.miuix.kmp.basic.ListPopupDefaults
+import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
+import top.yukonga.miuix.kmp.basic.PopupPositionProvider
+import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.basic.SmallTitle
+import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TextField
+import top.yukonga.miuix.kmp.basic.TopAppBar
+import top.yukonga.miuix.kmp.blur.layerBackdrop
+import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
+import top.yukonga.miuix.kmp.overlay.OverlayListPopup
+import top.yukonga.miuix.kmp.preference.SwitchPreference
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Back
+import top.yukonga.miuix.kmp.icon.extended.MoreCircle
+import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
+import top.yukonga.miuix.kmp.utils.overScrollVertical
+import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+
+data class AppProfileUiState(
+    val packageInfo: PackageInfo,
+    val settings: PackageSettings,
+    val isTargeted: Boolean,
+)
+
+data class AppProfileActions(
+    val onBack: () -> Unit,
+    val onSaveSettings: (PackageSettings) -> Unit,
+    val onToggleTarget: (enabled: Boolean) -> Unit,
+    val onLaunchApp: () -> Unit = {},
+    val onForceStopApp: () -> Unit = {},
+    val onRestartApp: () -> Unit = {},
+)
+
+@Composable
+fun AppProfilePage(
+    state: AppProfileUiState,
+    actions: AppProfileActions,
+    bottomPadding: Dp,
+    enableBlur: Boolean = false,
+) {
+    val scrollBehavior = MiuixScrollBehavior()
+    val blurBackdrop = rememberDefaultBlurBackdrop(enableBlur)
+
+    val settings = state.settings
+
+    // TextFields need local state for smooth typing; saved on value change with debounce effect
+    var logTagLocal by rememberSaveable(settings.logTag) { mutableStateOf(settings.logTag) }
+    var noteLocal by rememberSaveable(settings.note) { mutableStateOf(settings.note) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                modifier = Modifier.topBarModifier(blurBackdrop),
+                color = if (enableBlur) Color.Transparent else colorScheme.surface,
+                title = state.packageInfo.label,
+                navigationIcon = {
+                    IconButton(
+                        modifier = Modifier.padding(start = 16.dp),
+                        onClick = actions.onBack,
+                    ) {
+                        Icon(
+                            imageVector = MiuixIcons.Back,
+                            tint = colorScheme.onSurface,
+                            contentDescription = stringResource(Res.string.back),
+                        )
+                    }
+                },
+                actions = {
+                    val showPopup = remember { mutableStateOf(false) }
+                    OverlayListPopup(
+                        show = showPopup.value,
+                        popupPositionProvider = ListPopupDefaults.ContextMenuPositionProvider,
+                        alignment = PopupPositionProvider.Align.TopEnd,
+                        onDismissRequest = { showPopup.value = false },
+                        content = {
+                            ListPopupColumn {
+                                listOf(
+                                    stringResource(Res.string.launch_app),
+                                    stringResource(Res.string.force_stop),
+                                    stringResource(Res.string.restart_app),
+                                ).forEachIndexed { index, text ->
+                                    DropdownImpl(
+                                        text = text,
+                                        optionSize = 3,
+                                        isSelected = false,
+                                        index = index,
+                                        onSelectedIndexChange = { i ->
+                                            when (i) {
+                                                0 -> actions.onLaunchApp()
+                                                1 -> actions.onForceStopApp()
+                                                2 -> actions.onRestartApp()
+                                            }
+                                            showPopup.value = false
+                                        },
+                                    )
+                                }
+                            }
+                        },
+                    )
+                    IconButton(
+                        modifier = Modifier.padding(end = 16.dp),
+                        onClick = { showPopup.value = true },
+                        holdDownState = showPopup.value,
+                    ) {
+                        Icon(
+                            imageVector = MiuixIcons.MoreCircle,
+                            tint = colorScheme.onSurface,
+                            contentDescription = stringResource(Res.string.more_options),
+                        )
+                    }
+                },
+                scrollBehavior = scrollBehavior,
+                defaultWindowInsetsPadding = topBarDefaultWindowInsetsPadding,
+            )
+        },
+        contentWindowInsets = WindowInsets.systemBars.add(WindowInsets.displayCutout).only(WindowInsetsSides.Horizontal),
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxHeight()
+                .scrollEndHaptic()
+                .overScrollVertical()
+                .nestedScroll(scrollBehavior.nestedScrollConnection)
+                .then(blurBackdrop?.let { Modifier.layerBackdrop(it) } ?: Modifier),
+            contentPadding = innerPadding,
+            overscrollEffect = null,
+        ) {
+            // App header
+            item {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    // App icon
+                    val pkg = state.packageInfo
+                    AppIconImage(
+                        iconModel = pkg.iconModel,
+                        packageName = pkg.packageName,
+                        contentDescription = pkg.label,
+                        size = 64.dp,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        text = pkg.label,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colorScheme.onSurface,
+                    )
+                    Text(
+                        text = pkg.packageName,
+                        fontSize = 13.sp,
+                        color = colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+            }
+
+            // Enable section
+            item {
+                SmallTitle(text = stringResource(Res.string.section_module))
+            }
+            item {
+                Card(
+                    modifier = Modifier
+                        .padding(horizontal = 12.dp)
+                        .padding(bottom = 12.dp),
+                ) {
+                    SwitchPreference(
+                        title = stringResource(Res.string.enable_for_this_app),
+                        summary = stringResource(Res.string.enable_for_this_app_summary),
+                        checked = state.isTargeted,
+                        onCheckedChange = { actions.onToggleTarget(it) },
+                    )
+                }
+            }
+
+            // Log settings section
+            item {
+                SmallTitle(text = stringResource(Res.string.section_log_settings))
+            }
+            item {
+                Card(
+                    modifier = Modifier
+                        .padding(horizontal = 12.dp)
+                        .padding(bottom = 12.dp),
+                ) {
+                    val logLevelOptions = listOf("DEBUG", "INFO", "WARN")
+                    OverlayDropdownPreference(
+                        title = stringResource(Res.string.log_level),
+                        summary = stringResource(Res.string.log_level_summary),
+                        items = logLevelOptions,
+                        selectedIndex = logLevelOptions.indexOf(settings.logLevel).coerceAtLeast(0),
+                        onSelectedIndexChange = { idx ->
+                            actions.onSaveSettings(settings.copy(logLevel = logLevelOptions[idx]))
+                        },
+                    )
+                    SwitchPreference(
+                        title = stringResource(Res.string.dump_stack_trace),
+                        summary = stringResource(Res.string.dump_stack_trace_summary),
+                        checked = settings.dumpStackTrace,
+                        onCheckedChange = { actions.onSaveSettings(settings.copy(dumpStackTrace = it)) },
+                    )
+                }
+            }
+
+            // Log tag
+            item {
+                SmallTitle(text = stringResource(Res.string.section_log_tag))
+            }
+            item {
+                Card(
+                    modifier = Modifier
+                        .padding(horizontal = 12.dp)
+                        .padding(bottom = 12.dp),
+                    insideMargin = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                ) {
+                    Text(
+                        text = stringResource(Res.string.custom_tag),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = colorScheme.onSurface,
+                    )
+                    Text(
+                        text = stringResource(Res.string.custom_tag_hint),
+                        fontSize = 13.sp,
+                        color = colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.padding(top = 2.dp, bottom = 8.dp),
+                    )
+                    TextField(
+                        value = logTagLocal,
+                        onValueChange = {
+                            logTagLocal = it
+                            actions.onSaveSettings(settings.copy(logTag = it))
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = state.packageInfo.packageName.substringAfterLast('.'),
+                        singleLine = true,
+                    )
+                }
+            }
+
+            // Note
+            item {
+                SmallTitle(text = stringResource(Res.string.section_note))
+            }
+            item {
+                Card(
+                    modifier = Modifier
+                        .padding(horizontal = 12.dp)
+                        .padding(bottom = 12.dp),
+                    insideMargin = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                ) {
+                    TextField(
+                        value = noteLocal,
+                        onValueChange = {
+                            noteLocal = it
+                            actions.onSaveSettings(settings.copy(note = it))
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = stringResource(Res.string.note_placeholder),
+                    )
+                }
+            }
+
+            item { Spacer(Modifier.height(bottomPadding)) }
+        }
+    }
+}
