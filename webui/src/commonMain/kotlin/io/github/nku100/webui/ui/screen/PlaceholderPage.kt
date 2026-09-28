@@ -55,6 +55,7 @@ fun PlaceholderPage(
         BottomTab.HOME -> {
             HomePage(
                 state = HomeUiState(
+                    rootEnvironment = uiState.rootEnvironment,
                     moduleEnabled = config.enabled,
                     targetPackageCount = config.targetPackages.size,
                     moduleName = uiState.moduleName,
@@ -63,6 +64,7 @@ fun PlaceholderPage(
                 actions = HomeActions(
                     onStatusClick = { onNavigateToTab(BottomTab.SETTINGS.ordinal) },
                     onTargetAppsClick = { onNavigateToTab(BottomTab.APPS.ordinal) },
+                    onRefreshRoot = { viewModel.refresh() },
                 ),
                 bottomPadding = bottomPadding,
                 enableBlur = config.enableBlur,
@@ -72,6 +74,7 @@ fun PlaceholderPage(
             val navigator = LocalNavigator.current
             AppsPage(
                 state = AppsUiState(
+                    packageListFailed = uiState.packageListFailed,
                     packages = uiState.packages,
                     targetPackages = targetPackagesSet,
                     loading = uiState.isLoading,

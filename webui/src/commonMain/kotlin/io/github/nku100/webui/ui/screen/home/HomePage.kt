@@ -36,6 +36,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.Immutable
 import io.github.nku100.webui.ModuleInfo
+import io.github.nku100.webui.platform.RootEnvironment
+import io.github.nku100.webui.platform.RootImplementation
 import io.github.nku100.webui.platform.isAndroidPlatform
 import io.github.nku100.webui.platform.openUrl
 import org.jetbrains.compose.resources.stringResource
@@ -63,6 +65,7 @@ import zygisk_module_webui_template.webui.generated.resources.*
 
 @Immutable
 data class HomeUiState(
+    val rootEnvironment: RootEnvironment? = null,
     val moduleEnabled: Boolean = true,
     val targetPackageCount: Int = 0,
     val moduleId: String = ModuleInfo.MODULE_ID,
@@ -72,6 +75,7 @@ data class HomeUiState(
 )
 
 data class HomeActions(
+    val onRefreshRoot: () -> Unit = {},
     val onStatusClick: () -> Unit,
     val onTargetAppsClick: () -> Unit,
 )
@@ -116,6 +120,7 @@ fun HomePage(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     StatusCard(state = state, actions = actions)
+                    RootCard(state.rootEnvironment, actions.onRefreshRoot)
                     InfoCard(state = state)
                     SourceCodeCard(onOpenUrl = { openUrl(ModuleInfo.MODULE_REPO) })
                 }
@@ -126,8 +131,37 @@ fun HomePage(
 }
 
 @Composable
+private fun RootCard(environment: RootEnvironment?, onRefresh: () -> Unit) {
+    val implementation = when (environment?.implementation) {
+        RootImplementation.MAGISK -> "Magisk"
+        RootImplementation.KERNEL_SU -> "KernelSU"
+        RootImplementation.APATCH -> "APatch"
+        else -> stringResource(Res.string.root_unknown)
+    }
+    Card {
+        BasicComponent(
+            title = stringResource(Res.string.root_implementation),
+            summary = when {
+                environment == null -> stringResource(Res.string.root_unchecked)
+                !environment.available -> stringResource(Res.string.root_unavailable)
+                environment.version.isBlank() -> implementation
+                else -> "$implementation · ${environment.version}"
+            },
+            onClick = onRefresh,
+        )
+    }
+}
+
+@Composable
 private fun StatusCard(state: HomeUiState, actions: HomeActions) {
     val isDark = MiuixTheme.colorSchemeMode in setOf(ColorSchemeMode.Dark, ColorSchemeMode.MonetDark)
+    val working = state.moduleEnabled && state.rootEnvironment?.available == true
+    val status = when {
+        state.rootEnvironment == null -> stringResource(Res.string.root_unchecked)
+        !state.rootEnvironment.available -> stringResource(Res.string.root_required)
+        state.moduleEnabled -> stringResource(Res.string.status_working)
+        else -> stringResource(Res.string.status_disabled)
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -141,8 +175,8 @@ private fun StatusCard(state: HomeUiState, actions: HomeActions) {
                 .fillMaxHeight(),
             colors = CardDefaults.defaultColors(
                 color = when {
-                    state.moduleEnabled && isDark -> Color(0xFF1A3825)
-                    state.moduleEnabled -> Color(0xFFDFFAE4)
+                    working && isDark -> Color(0xFF1A3825)
+                    working -> Color(0xFFDFFAE4)
                     isDark -> Color(0xFF310808)
                     else -> Color(0xFFF8E2E2)
                 }
@@ -160,21 +194,17 @@ private fun StatusCard(state: HomeUiState, actions: HomeActions) {
                 ) {
                     Icon(
                         modifier = Modifier.size(170.dp),
-                        imageVector = if (state.moduleEnabled) {
+                        imageVector = if (working) {
                             Icons.Rounded.CheckCircleOutline
                         } else {
                             Icons.Rounded.ErrorOutline
                         },
-                        tint = if (state.moduleEnabled) {
+                        tint = if (working) {
                                 Color(0xFF36D167)
                             } else {
                                 Color(0xFFF72727)
                             },
-                        contentDescription = if (state.moduleEnabled) {
-                            stringResource(Res.string.status_working)
-                        } else {
-                            stringResource(Res.string.status_disabled)
-                        }
+                        contentDescription = status
                     )
                 }
                 Column(
@@ -184,11 +214,7 @@ private fun StatusCard(state: HomeUiState, actions: HomeActions) {
                 ) {
                     Text(
                         modifier = Modifier.fillMaxWidth(),
-                        text = if (state.moduleEnabled) {
-                            stringResource(Res.string.status_working)
-                        } else {
-                            stringResource(Res.string.status_disabled)
-                        },
+                        text = status,
                         fontSize = 20.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
