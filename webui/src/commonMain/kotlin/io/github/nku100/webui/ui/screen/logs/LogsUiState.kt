@@ -9,6 +9,9 @@ data class LogLine(
     val tag: String,
     val message: String,
     val raw: String,
+    val timestamp: String? = null,
+    val pid: String? = null,
+    val tid: String? = null,
 )
 
 enum class LogLevel { VERBOSE, DEBUG, INFO, WARN, ERROR, FATAL, UNKNOWN }
@@ -30,4 +33,3 @@ data class LogsActions(
     val onSearchStatusChange: (SearchStatus) -> Unit = {},
     val onSelectLevel: (LogLevel?) -> Unit = {},
 )
-

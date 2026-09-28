@@ -74,6 +74,8 @@
     <string name="search_logs">Search logs…</string>
     <string name="filter">Filter</string>
     <string name="clear_logs">Clear logs</string>
+    <string name="expand_log">Expand log</string>
+    <string name="collapse_log">Collapse log</string>
     <string name="level_all">All</string>
     <string name="loading">Loading…</string>
     <string name="error_prefix">Error: %1$s</string>

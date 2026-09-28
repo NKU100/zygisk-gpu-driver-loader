@@ -29,6 +29,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Article
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -42,6 +44,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -67,7 +70,6 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.basic.rememberPullToRefreshState
 import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.overlay.OverlayListPopup
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Delete
@@ -107,7 +109,10 @@ fun LogsPage(
     }
 
     val showFilterPopup = remember { mutableStateOf(false) }
-    val detailLine = remember { mutableStateOf<LogLine?>(null) }
+    val expandedLogIndex = remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(state.visibleLines) {
+        expandedLogIndex.value = null
+    }
 
     val searchStatus = state.searchStatus
     val levelOptions = listOf(null) + LogLevel.entries.toList()
@@ -205,8 +210,14 @@ fun LogsPage(
                             itemsIndexed(
                                 items = state.visibleLines,
                                 key = { index, _ -> index },
-                            ) { _, line ->
-                                LogLineItem(line = line, onClick = { detailLine.value = line })
+                            ) { index, line ->
+                                LogLineItem(
+                                    line = line,
+                                    isExpanded = expandedLogIndex.value == index,
+                                    onClick = {
+                                        expandedLogIndex.value = toggleExpandedLog(expandedLogIndex.value, index)
+                                    },
+                                )
                             }
                         }
                     }
@@ -308,8 +319,14 @@ fun LogsPage(
                             itemsIndexed(
                                 items = state.visibleLines,
                                 key = { index, _ -> index },
-                            ) { _, line ->
-                                LogLineItem(line = line, onClick = { detailLine.value = line })
+                            ) { index, line ->
+                                LogLineItem(
+                                    line = line,
+                                    isExpanded = expandedLogIndex.value == index,
+                                    onClick = {
+                                        expandedLogIndex.value = toggleExpandedLog(expandedLogIndex.value, index)
+                                    },
+                                )
                             }
                         }
                     }
@@ -319,39 +336,26 @@ fun LogsPage(
             }
         }
     }
-
-    // Detail dialog
-    detailLine.value?.let { line ->
-        OverlayDialog(
-            title = "${line.level.name}  ${line.tag}",
-            show = true,
-            onDismissRequest = { detailLine.value = null },
-        ) {
-            SelectionContainer {
-                Text(
-                    text = line.raw,
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace,
-                    color = colorScheme.onSurface,
-                    lineHeight = 18.sp,
-                )
-            }
-        }
-    }
 }
 
 @Composable
-private fun LogLineItem(line: LogLine, onClick: () -> Unit) {
+private fun LogLineItem(line: LogLine, isExpanded: Boolean, onClick: () -> Unit) {
+    val hasOverflow = remember(line.raw) { mutableStateOf(false) }
+    val displayText = line.displayText()
+    val processMetadata = line.processMetadata()
+    val showExpandIcon = hasOverflow.value || isExpanded
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp)
             .padding(bottom = 4.dp),
-        onClick = onClick,
+        onClick = { if (isExpanded || hasOverflow.value) onClick() },
         showIndication = true,
     ) {
         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
@@ -363,23 +367,69 @@ private fun LogLineItem(line: LogLine, onClick: () -> Unit) {
                 if (line.tag.isNotBlank()) {
                     Text(
                         text = line.tag,
+                        modifier = Modifier.weight(1f),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = colorScheme.onSurface,
                         maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                } else {
+                    Spacer(Modifier.weight(1f))
+                }
+                if (showExpandIcon) {
+                    Icon(
+                        imageVector = if (isExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                        tint = colorScheme.onSurfaceVariantSummary,
+                        contentDescription = stringResource(
+                            if (isExpanded) Res.string.collapse_log else Res.string.expand_log
+                        ),
                     )
                 }
             }
-            if (line.message.isNotBlank()) {
+            if (displayText.isNotBlank()) {
                 Spacer(Modifier.height(4.dp))
-                Text(
-                    text = line.message,
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace,
-                    color = colorScheme.onSurfaceVariantSummary,
-                    lineHeight = 16.sp,
-                    maxLines = 5,
-                )
+                SelectionContainer {
+                    Text(
+                        text = displayText,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = colorScheme.onSurfaceVariantSummary,
+                        lineHeight = 16.sp,
+                        maxLines = if (isExpanded) Int.MAX_VALUE else 2,
+                        onTextLayout = { layoutResult ->
+                            hasOverflow.value = layoutResult.hasVisualOverflow
+                        },
+                    )
+                }
+            }
+            if (line.timestamp != null || processMetadata.isNotBlank()) {
+                Spacer(Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    line.timestamp?.let {
+                        Text(
+                            text = it,
+                            fontSize = 10.sp,
+                            color = colorScheme.onSurfaceVariantSummary,
+                            maxLines = 1,
+                            softWrap = false,
+                        )
+                    }
+                    if (processMetadata.isNotBlank()) {
+                        Text(
+                            text = processMetadata,
+                            fontSize = 10.sp,
+                            color = colorScheme.onSurfaceVariantSummary,
+                            maxLines = 1,
+                            softWrap = false,
+                        )
+                    }
+                    Spacer(Modifier.weight(1f))
+                }
             }
         }
     }
