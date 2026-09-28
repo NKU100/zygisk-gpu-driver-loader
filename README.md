@@ -107,6 +107,24 @@ Edit files under `webui/src/commonMain/` to build your configuration UI:
 - `ui/screen/apps/AppsPage.kt` — Apps tab (target package selection)
 - `ui/screen/settings/SettingsPage.kt` — Settings tab
 
+### Root access
+
+The installed-app inventory is queried through the authorized root shell on both
+Android and WebUI hosts. Grant root access to the APK or its WebUI host in your
+root manager. A failed query shows a retry notice instead of an empty inventory;
+labels and icons are optional enrichment, with package names kept when unavailable.
+No Xiaomi-specific installed-app permission is requested.
+
+The home page verifies UID 0 and identifies the active `su` provider from its
+version response (Magisk, KernelSU, or APatch). Unrecognized providers stay
+unknown; this does not detect dormant root installations or prove Zygisk injection.
+See the upstream [KernelSU su implementation](https://github.com/tiann/KernelSU/blob/main/userspace/ksud/src/su.rs),
+[APatch root shell](https://github.com/bmax121/APatch/blob/main/apd/src/apd.rs),
+and [Magisk su implementation](https://github.com/topjohnwu/Magisk/blob/master/native/src/core/su/su.cpp).
+ReZygisk exposes its own [state file](https://github.com/PerformanC/ReZygisk/blob/main/webroot/js/pages/home/index.js),
+but that is not a common interface across Zygisk implementations, so no Zygisk
+implementation label is currently shown.
+
 ### 5. Build
 
 ```bash

@@ -85,4 +85,11 @@
     <string name="cancel">取消</string>
     <string name="search">搜索</string>
     <string name="clear">清除</string>
+    <string name="root_required">需要 root 授权</string>
+    <string name="root_implementation">Root 实现 · 点击刷新</string>
+    <string name="root_unknown">已获得 root · 未知实现</string>
+    <string name="root_unchecked">尚未检测</string>
+    <string name="root_unavailable">未获得 root 权限 · 点击重试</string>
+    <string name="root_list_failed">无法通过 root 获取应用列表</string>
+    <string name="root_retry_hint">请在 root 管理器中允许授权，然后点击重试。若已授权，请检查 root shell 是否可查询应用。</string>
 </resources>
