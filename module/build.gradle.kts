@@ -224,8 +224,9 @@ androidComponents.onVariants { variant ->
         group = "module"
         dependsOn(zipTask)
         inputs.property("zipFileName", zipFileName)
+        inputs.file(zipTask.flatMap { it.archiveFile })
         doFirst {
-            val zipFile = zipTask.get().outputs.files.singleFile
+            val zipFile = inputs.files.singleFile
             commandLine("adb", "push", zipFile.path, "/data/local/tmp")
         }
     }
