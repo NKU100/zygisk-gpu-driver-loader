@@ -4,7 +4,7 @@
     <uses-sdk tools:overrideLibrary="top.yukonga.miuix.kmp.blur" />
 
     <application
-        android:label="Module Config"
+        android:label="Zygisk GPU Driver Loader"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity
             android:name="io.github.nku100.webui.MainActivity"
