@@ -1,4 +1,5 @@
 #include "driver_loader.h"
+#include "gpu_model_reader.h"
 #include "zygisk.hpp"
 #include "yyjson.h"
 
@@ -259,7 +260,23 @@ DriverLoadResult prepare([[maybe_unused]] zygisk::Api *api, [[maybe_unused]] con
         result.reason = "Android 9 or newer required";
         return result;
     }
-    Fd registry(requestDriverDirectory(api, selection.driverId));
+    std::string gpuModel;
+    GpuModelReadStatus modelStatus = readGpuModelFile("/sys/kernel/gpu/gpu_model", gpuModel);
+    if (modelStatus != GpuModelReadStatus::Readable || gpuModel.empty()) {
+        gpuModel.clear();
+        modelStatus = readGpuModelFile("/sys/class/kgsl/kgsl-3d0/gpu_model", gpuModel);
+    }
+    int registryFd = -1;
+    if (modelStatus != GpuModelReadStatus::Readable || !withAdrenoGpuModel(gpuModel, [&] {
+            registryFd = requestDriverDirectory(api, selection.driverId);
+        })) {
+        result.status = DriverLoadStatus::UnsupportedDevice;
+        result.reason = modelStatus != GpuModelReadStatus::Readable || gpuModel.empty()
+            ? "KGSL GPU model unavailable, empty, or invalid; custom driver skipped"
+            : "KGSL GPU model did not identify Adreno; custom driver skipped";
+        return result;
+    }
+    Fd registry(registryFd);
     Fd meta(regularFile(registry.value, "meta.json", MaxMetadataBytes));
     std::string text;
     if (meta.value < 0 || !readText(meta.value, text)) {
@@ -307,6 +324,7 @@ const char *statusName(DriverLoadStatus status) {
     switch (status) {
         case DriverLoadStatus::NotTargeted: return "NotTargeted";
         case DriverLoadStatus::NoBinding: return "NoBinding";
+        case DriverLoadStatus::UnsupportedDevice: return "UnsupportedDevice";
         case DriverLoadStatus::InvalidDriver: return "InvalidDriver";
         case DriverLoadStatus::HookPathUnavailable: return "HookPathUnavailable";
         case DriverLoadStatus::AdrenotoolsFailed: return "AdrenotoolsFailed";
