@@ -76,6 +76,9 @@ kotlin {
         commonTest.dependencies {
             implementation(kotlin("test"))
         }
+        wasmJsTest.dependencies {
+            implementation(libs.compose.ui.test)
+        }
         androidMain.dependencies {
             implementation(compose.preview)
             implementation(libs.activity.compose)
