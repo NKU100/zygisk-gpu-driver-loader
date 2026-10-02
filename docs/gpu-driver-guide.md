@@ -67,7 +67,11 @@ KernelSU WebUI 已完成原始 Turnip ZIP 的系统文件选择、导入、列�
 
 KernelSU WebUI 的已绑定驱动删除保护已验证：详情提示先解除应用绑定，点击删除不会进入确认页，驱动索引与绑定配置保留。通过 WebUI 切换为系统驱动并执行“重启应用”后，Unity 新进程映射 `/vendor/lib64/hw/vulkan.adreno.so`，没有映射模块的私有驱动或 hook 库，窗口继续显示棋盘场景与几何体。
 
-这些结果不代表所有应用或驱动兼容。使用 Turnip 时，Unity 启动日志仍报告 `VK_QCOM_fragment_density_map_offset` 缺少所需 `VK_EXT_fragment_density_map` 的扩展启用验证错误，未导致此次场景停止渲染，但不能称为无验证错误或完整 VRS 功能验收。未绑定驱动的删除确认流程，以及 Magisk 配置 APK 的完整真机流程仍需继续验证。
+未绑定的 Turnip 驱动可进入删除确认页：删除操作为上方红色文字，取消操作为下方中性色描边按钮。点击取消后驱动保留，主库哈希未变；这项验证未实际删除 Turnip。
+
+配套 APK 已在同一 KernelSU 真机覆盖安装并启动，可读取模块状态、目标应用数量与已导入驱动列表。这只验证 Android 配置入口在 KernelSU 上的数据读取，不等于 Magisk 环境验收，也未覆盖 APK 文件选择、导入与配置写入的完整流程。
+
+这些结果不代表所有应用或驱动兼容。使用 Turnip 时，Unity 启动日志仍报告 `VK_QCOM_fragment_density_map_offset` 缺少所需 `VK_EXT_fragment_density_map` 的扩展启用验证错误，未导致此次场景停止渲染，但不能称为无验证错误或完整 VRS 功能验收。实际删除及配套 APK 的完整真机流程仍需继续验证。
 
 ## 从源码构建
 
