@@ -108,6 +108,14 @@ androidComponents.onVariants { variant ->
             exclude("**/*.map")
         }
         from(rootProject.layout.projectDirectory.file("README.md"))
+        from(layout.projectDirectory.file("src/main/cpp/external/libadrenotools/LICENSE")) {
+            into("licenses")
+            rename { "libadrenotools.txt" }
+        }
+        from(layout.projectDirectory.file("src/main/cpp/external/libadrenotools/lib/linkernsbypass/LICENSE")) {
+            into("licenses")
+            rename { "linkernsbypass.txt" }
+        }
         from(layout.projectDirectory.file("template")) {
             exclude("module.prop", "customize.sh", "post-fs-data.sh", "service.sh")
             filter<FixCrLfFilter>("eol" to FixCrLfFilter.CrLf.newInstance("lf"))

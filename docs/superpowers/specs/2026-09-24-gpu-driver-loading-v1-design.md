@@ -1,6 +1,6 @@
 # 按 App 加载 GPU 驱动第一阶段设计
 
-状态：Native 私有暂存、系统 Vulkan loader 拦截、WebUI 导入及 Unity 窗口渲染已在 Redmi Adreno 750 验证；完整导入结果反馈、实际删除与 Magisk 环境验收继续进行
+状态：Native 加载、双端 ZIP 导入反馈、测试驱动实际删除及 Release 安装重启已在 Redmi Adreno 750 验证；Magisk 环境与部分安全退出路径继续验收
 
 `libadrenotools` 的公开 `adrenotools_open_libvulkan()` 接口要求 hook 目录对应目标
 App 的 `nativeLibraryDir`。本模块不调用该私有 loader 接口，而是直接复用
@@ -141,6 +141,13 @@ PPSSPP 自己从私有 loader 句柄解析 Vulkan 函数，普通目标 App 不�
 - 目标 App 需要重启后才会使用新的驱动。
 
 ## 验证
+
+最新验收已覆盖 APK 与 KernelSU WebUI 的原始 Turnip ZIP 重复导入成功反馈、
+非 ELF 主库拒绝、索引与绑定保留、暂存清理，以及 APK 中未绑定测试驱动的实际删除。
+完整 Release 包覆盖安装并重启后，Unity 映射私有 Turnip 与 Release hook 并渲染场景。
+未选中的 DevCheck 冷启动映射系统 `/vendor/lib64/hw/vulkan.adreno.so`，没有模块
+私有驱动或 helper 映射。Native 主机测试已重新运行；这些证据仍不能代替 Magisk
+环境或其他 ABI 的运行验证。以下日期记录保留当时的验证边界，最新结果以使用指南为准。
 
 2026-10-02 后续验收通过 KernelSU WebUI 的系统文件选择器导入原始 Turnip R8 ZIP，
 检查驱动索引发布、列表与详情显示，再通过应用配置为 `com.unity.vrsdemo.vulkan`
