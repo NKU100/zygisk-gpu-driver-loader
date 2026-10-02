@@ -42,6 +42,13 @@ inline constexpr bool privateDirectoryMetadataAllowed(uid_t actualUid, gid_t act
     return actualUid == expectedUid && actualGid == expectedGid && (mode & 07777) == 0700;
 }
 
+inline constexpr bool appFilesDirectoryMetadataAllowed(uid_t actualUid, gid_t actualGid, mode_t mode,
+                                                        uid_t expectedUid, gid_t expectedGid) noexcept {
+    const mode_t permissions = mode & 07777;
+    return actualUid == expectedUid && actualGid == expectedGid &&
+        (permissions == 0700 || permissions == 0771);
+}
+
 inline constexpr DriverLifecycleAction driverLifecycleAction(bool targeted, bool hasBinding,
                                                                bool preparationSucceeded) noexcept {
     if (!targeted || !hasBinding) return DriverLifecycleAction::DropModuleLibrary;

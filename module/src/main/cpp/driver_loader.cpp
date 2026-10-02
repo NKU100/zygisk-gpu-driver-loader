@@ -215,7 +215,7 @@ int requestDriverFile(zygisk::Api *api, const std::string &driverId,
     return file;
 }
 
-int privateDirectory(int parent, const std::string &name, uid_t uid, gid_t gid) {
+int privateDirectory(int parent, const std::string &name, uid_t uid, gid_t gid, bool appFiles = false) {
     bool created = mkdirat(parent, name.c_str(), 0700) == 0;
     if (!created && errno != EEXIST) return -1;
     Fd fd(openDirectory(parent, name));
@@ -223,8 +223,11 @@ int privateDirectory(int parent, const std::string &name, uid_t uid, gid_t gid) 
     if (fd.value < 0 || fstat(fd.value, &st)) return -1;
     if (created && st.st_uid != geteuid()) return -1;
     if (created && (fchown(fd.value, uid, gid) || fchmod(fd.value, 0700))) return -1;
-    if (fstat(fd.value, &st) ||
-        !privateDirectoryMetadataAllowed(st.st_uid, st.st_gid, st.st_mode, uid, gid)) return -1;
+    if (fstat(fd.value, &st)) return -1;
+    const bool allowed = appFiles
+        ? appFilesDirectoryMetadataAllowed(st.st_uid, st.st_gid, st.st_mode, uid, gid)
+        : privateDirectoryMetadataAllowed(st.st_uid, st.st_gid, st.st_mode, uid, gid);
+    if (!allowed) return -1;
     return dup(fd.value);
 }
 
@@ -292,7 +295,8 @@ bool stageDriver(const std::string &data, const DriverSelection &selection, uid_
     Fd app(openAbsoluteDirectory(base));
     struct stat st{};
     if (app.value < 0 || fstat(app.value, &st) || st.st_uid != uid) return false;
-    Fd files(privateDirectory(app.value, "files", uid, gid));
+    // Android-owned files directories can be 0771; module-owned descendants must remain 0700.
+    Fd files(privateDirectory(app.value, "files", uid, gid, true));
     Fd module(privateDirectory(files.value, MODULE_ID, uid, gid));
     Fd parent(privateDirectory(module.value, "gpu-driver", uid, gid));
     if (parent.value < 0) return false;

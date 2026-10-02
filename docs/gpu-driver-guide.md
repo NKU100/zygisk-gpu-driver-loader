@@ -61,7 +61,11 @@ dependency.so        # 可选，文件名由驱动包决定
 
 在 Redmi 23117RK66C、Android API 36、Adreno 750、KernelSU 32601 / Zygisk Next 1.5.0 上，已验证正式模块加载用户已有的 Qualcomm 762.46 和原始 Turnip ZIP，检查了私有库映射，并通过 Vulkan 实例、设备、队列提交和 4096 字节缓冲区回读。原始多依赖 Qualcomm 757 包只验证了导入和整组暂存，没有执行其 GPU 请求。
 
-上述是加载和基础 GPU 工作验证，不是全部产品验收。WebUI 文件选择、应用绑定的真机完整流程，以及真实应用的图形管线、swapchain 和窗口渲染仍待验证。Magisk 配置 APK 的完整真机流程也不能由 KernelSU 验证代替。
+KernelSU WebUI 已完成原始 Turnip ZIP 的系统文件选择、导入、列表与详情显示、为 `com.unity.vrsdemo.vulkan` 选择驱动及配置落盘。Unity 实际启动使用私有 Turnip 库，日志报告 `Loaded`、renderer 为 `Turnip Adreno (TM) 750`、版本为 `0x06463063`，窗口显示棋盘场景与几何体。
+
+此轮真机验证发现应用既有 `files` 目录可能为 `0771`。暂存现在接受属主与属组匹配的 `0700` 或 `0771` 应用目录，不修改它的权限；模块自己的子目录仍要求 `0700`。
+
+这些结果不代表所有应用或驱动兼容。Unity 启动日志仍报告 `VK_QCOM_fragment_density_map_offset` 缺少所需 `VK_EXT_fragment_density_map` 的扩展启用验证错误，未导致此次场景停止渲染，但不能称为无验证错误或完整 VRS 功能验收。WebUI 删除保护、重启后的系统驱动切换，以及 Magisk 配置 APK 的完整真机流程仍需继续验证。
 
 ## 从源码构建
 

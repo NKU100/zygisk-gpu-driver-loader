@@ -60,6 +60,12 @@ int main() {
     assert(!gpu::privateDirectoryMetadataAllowed(10000, 10000, 0702, 10000, 10000));
     assert(!gpu::privateDirectoryMetadataAllowed(10001, 10000, 0700, 10000, 10000));
     assert(!gpu::privateDirectoryMetadataAllowed(10000, 10001, 0700, 10000, 10000));
+    assert(gpu::appFilesDirectoryMetadataAllowed(10000, 10000, 0771, 10000, 10000));
+    assert(gpu::appFilesDirectoryMetadataAllowed(10000, 10000, 0700, 10000, 10000));
+    assert(!gpu::appFilesDirectoryMetadataAllowed(10000, 10000, 0777, 10000, 10000));
+    assert(!gpu::appFilesDirectoryMetadataAllowed(10001, 10000, 0771, 10000, 10000));
+    assert(!gpu::appFilesDirectoryMetadataAllowed(10000, 10001, 0771, 10000, 10000));
+    assert(!gpu::appFilesDirectoryMetadataAllowed(10000, 10000, 04771, 10000, 10000));
 
     assert(gpu::driverLifecycleAction(false, false, false) == gpu::DriverLifecycleAction::DropModuleLibrary);
     assert(gpu::driverLifecycleAction(false, true, true) == gpu::DriverLifecycleAction::DropModuleLibrary);

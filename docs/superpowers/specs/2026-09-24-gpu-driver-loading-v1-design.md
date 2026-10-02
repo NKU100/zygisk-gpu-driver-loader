@@ -142,6 +142,22 @@ PPSSPP 自己从私有 loader 句柄解析 Vulkan 函数，普通目标 App 不�
 
 ## 验证
 
+2026-10-02 后续验收通过 KernelSU WebUI 的系统文件选择器导入原始 Turnip R8 ZIP，
+检查驱动索引发布、列表与详情显示，再通过应用配置为 `com.unity.vrsdemo.vulkan`
+绑定 canonical driver ID。正式模块在 Unity 进程中记录 `Loaded`，私有 driver 的
+SHA-256 为 `fdd378520022f88b0363dd1f77f6989332730271712621523075fe4eb4de2a09`，
+`/proc/<pid>/maps` 映射该文件，Unity 报告 renderer `Turnip Adreno (TM) 750`、
+driver version `0x06463063`，窗口显示棋盘场景与几何体。此轮没有手工发布驱动索引。
+
+原先对应用既有 `files` 目录强制要求 `0700`，在该 Unity 应用的 `0771` 目录上造成
+暂存失败。只对这个应用目录接受属主、属组匹配的 `0700` 或 `0771`；模块及其
+driver/hook 子目录继续要求 `0700`，不修改应用既有目录权限。
+
+Unity 仍报告设备扩展启用依赖的验证错误：启用 `VK_QCOM_fragment_density_map_offset`
+时缺少 `VK_EXT_fragment_density_map`。本次渲染没有因该错误停止，但不作为无验证
+错误、完整 VRS 特性或性能的证明。删除保护、切回系统驱动和 Magisk 配置 APK
+真机流程仍需补充验收。
+
 2026-10-02，正式模块在 Redmi 23117RK66C、Android API 36、arm64、Adreno 750、
 KernelSU 32601 / Zygisk Next 1.5.0 上通过以下验证。设备保持首次解锁前的锁屏状态。
 
