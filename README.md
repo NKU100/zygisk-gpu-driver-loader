@@ -189,6 +189,7 @@ The native module is built for `arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`, and
 - [zygisk-module-sample](https://github.com/topjohnwu/zygisk-module-sample)
 - [KernelSU Module WebUI](https://kernelsu.org/guide/module-webui.html)
 - [KsuWebUIStandalone](https://github.com/NKU100/KsuWebUIStandalone) — run module WebUI standalone on Magisk (full KSU JS API aligned)
+- [KsuWebUIStandalone compatibility](docs/ksu-webui-standalone.md) — bridge, inset, and virtual resource expectations
 - [Compose Multiplatform](https://github.com/JetBrains/compose-multiplatform)
 - [Miuix](https://compose-miuix-ui.github.io/miuix/)
 - [KernelSU JS API](https://www.npmjs.com/package/kernelsu)
