@@ -136,6 +136,15 @@ fun DriversPage(
                 state.importError?.let { error ->
                     item { Text(importErrorText(error), modifier = Modifier.padding(horizontal = 24.dp), color = colorScheme.error) }
                 }
+                state.importedDriver?.let { driver ->
+                    item {
+                        Text(
+                            stringResource(Res.string.driver_import_success, driver.name),
+                            modifier = Modifier.padding(horizontal = 24.dp),
+                            color = colorScheme.onSurfaceVariantSummary,
+                        )
+                    }
+                }
                 state.deleteError?.let { error ->
                     item { Text(deleteErrorText(error), modifier = Modifier.padding(horizontal = 24.dp), color = colorScheme.error) }
                 }

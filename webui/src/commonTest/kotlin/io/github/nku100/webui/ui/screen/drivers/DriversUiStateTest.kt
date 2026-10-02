@@ -52,6 +52,26 @@ class DriversUiStateTest {
     }
 
     @Test
+    fun repeatedImportKeepsSuccessFeedbackAfterListRefresh() {
+        val state = DriversUiState(drivers = listOf(installed), listStatus = DriverListStatus.FRESH)
+
+        val result = state.afterSuccessfulImport(installed).withVerifiedList(listOf(installed))
+
+        assertEquals(installed, result.importedDriver)
+        assertEquals(listOf(installed), result.drivers)
+    }
+
+    @Test
+    fun failedImportClearsPreviousSuccessFeedback() {
+        val state = DriversUiState(drivers = listOf(installed), importedDriver = installed)
+
+        val result = state.afterImportFailure(DriverArchiveError.INVALID_ZIP)
+
+        assertNull(result.importedDriver)
+        assertEquals(DriverArchiveError.INVALID_ZIP, result.importError)
+    }
+
+    @Test
     fun failedImportKeepsTheInstalledList() {
         val state = DriversUiState(drivers = listOf(installed), isBusy = true)
 

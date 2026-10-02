@@ -302,7 +302,7 @@ class MainViewModel : ViewModel() {
     fun importDriver(): Job = viewModelScope.launch {
         val current = _uiState.value.drivers
         if (current.isBusy || !current.canImport) return@launch
-        _uiState.update { it.copy(drivers = current.copy(isBusy = true, importError = null, deleteError = null)) }
+        _uiState.update { it.copy(drivers = current.copy(isBusy = true, importError = null, importedDriver = null, deleteError = null)) }
         try {
             when (val result = DriverRepository.importDriverZip()) {
                 is DriverImportResult.Accepted -> {
@@ -325,7 +325,7 @@ class MainViewModel : ViewModel() {
     fun deleteDriver(driverId: String): Job = viewModelScope.launch {
         val current = _uiState.value.drivers
         if (current.isBusy || current.isBound(driverId, _uiState.value.config)) return@launch
-        _uiState.update { it.copy(drivers = current.copy(isBusy = true, importError = null, deleteError = null)) }
+        _uiState.update { it.copy(drivers = current.copy(isBusy = true, importError = null, importedDriver = null, deleteError = null)) }
         try {
             when (val result = DriverRepository.deleteDriver(driverId)) {
                 DriverDeleteResult.DELETED -> {

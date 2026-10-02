@@ -78,6 +78,7 @@
     <string name="import_driver_summary">Select a local AdrenoTools ZIP</string>
     <string name="driver_preview_unavailable">Import requires the module\'s root bridge</string>
     <string name="driver_working">Working…</string>
+    <string name="driver_import_success">Driver ready: %1$s</string>
     <string name="installed_drivers">Installed drivers</string>
     <string name="no_drivers">No drivers imported yet</string>
     <string name="driver_list_error">Could not load drivers</string>

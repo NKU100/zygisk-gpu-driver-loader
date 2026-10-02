@@ -16,6 +16,7 @@ data class DriversUiState(
     val isBusy: Boolean = false,
     val listStatus: DriverListStatus = DriverListStatus.LOADING,
     val importError: DriverArchiveError? = null,
+    val importedDriver: DriverInfo? = null,
     val deleteError: DriverDeleteResult? = null,
 ) {
     val showEmptyState: Boolean get() = listStatus == DriverListStatus.FRESH && drivers.isEmpty()
@@ -24,7 +25,7 @@ data class DriversUiState(
     fun isBound(driverId: String, config: ModuleConfig): Boolean =
         config.packageSettings.values.any { it.driverId == driverId }
 
-    fun afterImportFailure(error: DriverArchiveError): DriversUiState = copy(importError = error)
+    fun afterImportFailure(error: DriverArchiveError): DriversUiState = copy(importError = error, importedDriver = null)
 
     fun withVerifiedList(installed: List<DriverInfo>): DriversUiState =
         copy(drivers = installed, listStatus = DriverListStatus.FRESH)
@@ -38,6 +39,7 @@ data class DriversUiState(
         drivers = drivers.filterNot { it.driverId == driver.driverId } + driver,
         listStatus = DriverListStatus.STALE,
         importError = null,
+        importedDriver = driver,
     )
 
     fun afterSuccessfulDelete(driverId: String): DriversUiState = copy(

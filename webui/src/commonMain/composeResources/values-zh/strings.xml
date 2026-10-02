@@ -78,6 +78,7 @@
     <string name="import_driver_summary">选择本地 AdrenoTools ZIP</string>
     <string name="driver_preview_unavailable">导入需要模块 Root 桥接</string>
     <string name="driver_working">处理中…</string>
+    <string name="driver_import_success">驱动已就绪：%1$s</string>
     <string name="installed_drivers">已安装的驱动</string>
     <string name="no_drivers">尚未导入驱动</string>
     <string name="driver_list_error">无法加载驱动列表</string>
