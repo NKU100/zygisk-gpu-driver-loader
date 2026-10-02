@@ -59,6 +59,20 @@ dependency.so        # 可选，文件名由驱动包决定
 
 ## 当前验证范围
 
+### 第一阶段验收对应关系
+
+| 设计要求 | 已取得的证据 | 边界 |
+|---|---|---|
+| Debug 打包 | `ci-192-97111e0` 包含主模块、两个 arm64 helper 与许可证；实际安装脚本通过 | 包内不附带 GPU 驱动 |
+| 双端合法 ZIP 导入 | APK 与 KernelSU WebUI 通过系统选择器导入原始 Turnip，成功反馈、索引和库哈希一致 | 多依赖 Qualcomm 包另有主机逐文件字节比对 |
+| 异常 ZIP 拒绝 | 路径穿越、缺元数据、缺库和非 arm64 ELF 被拒绝；原索引和绑定保留 | 不声称所有损坏压缩格式均完成真机测试 |
+| 按应用加载 | Unity 绑定 Turnip 后持久记录加载路径及 `Loaded`；未选中的 DevCheck 只映射系统 Vulkan | Redmi API 36、Adreno 750、KernelSU / Zygisk Next |
+| Vulkan 可用 | 独立探针完成 instance、物理设备枚举、device、提交与回读；Unity 实际渲染 | Unity 的扩展依赖验证错误仍保留 |
+| 绑定驱动缺失回退 | 源目录移开后 Unity 使用系统驱动渲染，恢复后重新加载 Turnip | 不保证已加载驱动的 GPU 故障可进程内恢复 |
+| 不适用条件安全退出 | 无驱动目录、32 位翻译进程、非目标包、总开关关闭有真机证据；KGSL 缺失有 Magisk AVD 证据；未知和非 Adreno 型号有生产资格判断的主机测试 | 不代表其他 Android 版本、GPU 或 ABI 的运行兼容性 |
+
+上述对应关系区分真机、模拟器与主机测试。以下记录保留各轮验收的具体条件；较早的性能观察不代表后来批量传输版本的耗时。
+
 源码提交 `57b73dc` 的 Release 包 `ci-191-57b73dc` 已在下述 Redmi 设备覆盖安装并重启。Unity 新进程记录 `Loaded`，映射私有 Turnip 与 Release hook，棋盘场景正常渲染；配套 APK 和 KernelSU 正常入口的 WebUI 均显示新版本。配置、驱动索引和 Turnip 主库哈希与升级前一致，旧模块与配置保存在设备数据目录的 `validation-backup-ci191`。
 
 在 Redmi 23117RK66C、Android API 36、Adreno 750、KernelSU 32601 / Zygisk Next 1.5.0 上，已验证正式模块加载用户已有的 Qualcomm 762.46 和原始 Turnip ZIP，检查了私有库映射，并通过 Vulkan 实例、设备、队列提交和 4096 字节缓冲区回读。原始多依赖 Qualcomm 757 包只验证了导入和整组暂存，没有执行其 GPU 请求。
