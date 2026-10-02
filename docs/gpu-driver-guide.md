@@ -69,6 +69,8 @@ KernelSU WebUI 的已绑定驱动删除保护已验证：详情提示先解除�
 
 未绑定的 Turnip 驱动可进入删除确认页：删除操作为上方红色文字，取消操作为下方中性色描边按钮。点击取消后驱动保留，主库哈希未变；这项验证未实际删除 Turnip。
 
+同步模板后，KernelSU 管理器中的 WebUI 已热更新并重新打开。应用列表显示 Unity 与 DevCheck；日志页读取持久日志，显示 Unity 新进程的 `Loaded`、PID/TID 和时间，并可在原卡片展开私有驱动路径。此次进程日志未发现 JavaScript 报错，但有缺失 `favicon.ico` 的资源请求；未将这项非关键请求视为页面渲染失败。热更新前的 WebUI 资源保存在设备模块数据目录的 `webroot-before-template-869578c`，驱动与配置未替换。
+
 配套 APK 已在同一 KernelSU 真机覆盖安装并启动，可读取模块状态、目标应用数量与已导入驱动列表。同步模板的 root 应用枚举后，列表可显示 Unity、DevCheck 等应用，首页正确识别 KernelSU。通过 APK 为 Unity 选择 Turnip 并执行重启后，配置写入对应驱动 ID，新进程记录 `Loaded`，映射私有 Turnip 库，窗口显示 `Turnip Adreno (TM) 750` 与棋盘场景。此结果不等于 Magisk 环境验收。
 
 APK 的系统文件选择器已取得原始 Turnip ZIP，重复导入结束后暂存目录清理，索引未新增记录。此次没有捕获成功提示，不能仅凭索引不变认定重复导入成功。传输约 17 MiB 解压库耗时数分钟，当前仅显示“处理中”，导入耗时与结果反馈仍需改进和复核。

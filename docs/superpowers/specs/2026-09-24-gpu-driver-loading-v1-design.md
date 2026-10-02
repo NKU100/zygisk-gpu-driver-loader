@@ -1,6 +1,6 @@
 # 按 App 加载 GPU 驱动第一阶段设计
 
-状态：Native 私有暂存、系统 Vulkan loader 拦截与 GPU 提交已在 Redmi Adreno 750 验证；WebUI 导入和真实 App 渲染验收继续进行
+状态：Native 私有暂存、系统 Vulkan loader 拦截、WebUI 导入及 Unity 窗口渲染已在 Redmi Adreno 750 验证；完整导入结果反馈、实际删除与 Magisk 环境验收继续进行
 
 `libadrenotools` 的公开 `adrenotools_open_libvulkan()` 接口要求 hook 目录对应目标
 App 的 `nativeLibraryDir`。本模块不调用该私有 loader 接口，而是直接复用
@@ -155,8 +155,11 @@ driver/hook 子目录继续要求 `0700`，不修改应用既有目录权限。
 
 Unity 仍报告设备扩展启用依赖的验证错误：启用 `VK_QCOM_fragment_density_map_offset`
 时缺少 `VK_EXT_fragment_density_map`。本次渲染没有因该错误停止，但不作为无验证
-错误、完整 VRS 特性或性能的证明。删除保护、切回系统驱动和 Magisk 配置 APK
-真机流程仍需补充验收。
+错误、完整 VRS 特性或性能的证明。后续已验证 WebUI 删除绑定保护、删除确认取消、
+切回系统驱动后重启 Unity，以及配套 APK 在 KernelSU 上绑定 Turnip 后的实际渲染。
+同步模板 root 查询与日志卡片更新后，两个配置入口均能显示目标应用；KernelSU
+WebUI 可读取并展开 Unity 的持久 `Loaded` 记录。Magisk 环境、实际删除和导入结果
+反馈仍需补充验收，详细边界见使用指南。
 
 2026-10-02，正式模块在 Redmi 23117RK66C、Android API 36、arm64、Adreno 750、
 KernelSU 32601 / Zygisk Next 1.5.0 上通过以下验证。设备保持首次解锁前的锁屏状态。
