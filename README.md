@@ -1,6 +1,10 @@
-# Zygisk Module WebUI Template
+# Zygisk GPU Driver Loader
 
-A Zygisk module template with **Compose Multiplatform** WebUI, based on [zygisk-module-template][zygisk-module-template].
+按 App 加载自定义 Adreno Vulkan 驱动的 Zygisk 模块。第一版支持导入本地驱动 ZIP 和为应用选择驱动，不内置驱动、不提供下载功能，也不替换系统驱动文件。
+
+请先阅读[中文使用指南](docs/gpu-driver-guide.md)，了解驱动格式、配置步骤、回退方法和验证范围。当前仍在开发验证中，不能将加载成功视为所有应用均兼容。
+
+本项目基于 [Zygisk Module WebUI Template](https://github.com/NKU100/zygisk-module-webui-template)。以下是继承的模板开发资料，并非本模块的安装或使用步骤；模块身份已在 `module.gradle.kts` 中配置，不需要重新改成示例名称。
 
 ## Features
 
