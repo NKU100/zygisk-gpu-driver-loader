@@ -85,6 +85,8 @@ APK 和 KernelSU WebUI 均已验证元数据声明 arm64-v8a、但主库实际�
 
 完整 Release ZIP `ci-180-7593c49` 已构建，真实主机 shell 的 arm64 安装测试确认模块及两份 hook 库均被解压与校验。随后通过 KernelSU 命令行覆盖安装并重启真机，启用版本为 `ci (180-7593c49-release)`，配置与驱动索引哈希未变。Unity 新进程映射私有 Turnip 主库和 Release hook 库，窗口显示 `Turnip Adreno (TM) 750` 与棋盘场景。安装前的模块目录、配置与索引保存在设备数据目录 `validation-backup-ci180`，没有替换驱动数据。
 
+未选中的 DevCheck 冷启动只映射系统 Vulkan，没有模块私有驱动或 helper。通过 APK 关闭模块总开关后，配置明确为 `enabled=false` 且保留 Unity 的绑定；重启 Unity 后仅映射系统 Vulkan，场景正常渲染。横屏自动化点击曾未确认落盘，因此另行在竖屏复测关闭与重新启用：两次点击均确认配置变化，重新启用后配置哈希与测试前一致。Unity 冷启动的新进程记录 `Loaded`，映射私有 Turnip 主库和 Release hook 库，画面显示 `Turnip Adreno (TM) 750` 与正常渲染的棋盘场景。测试结束恢复了原来的自动旋转设置。
+
 这些结果不代表所有应用或驱动兼容。使用 Turnip 时，Unity 启动日志仍报告 `VK_QCOM_fragment_density_map_offset` 缺少所需 `VK_EXT_fragment_density_map` 的扩展启用验证错误，未导致此次场景停止渲染，但不能称为无验证错误或完整 VRS 功能验收。配套 APK 的完整真机流程仍需继续验证。
 
 ## 从源码构建
