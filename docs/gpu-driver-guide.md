@@ -91,6 +91,10 @@ APK 和 KernelSU WebUI 均已验证元数据声明 arm64-v8a、但主库实际�
 
 ## 从源码构建
 
+### Magisk 模拟器验证边界
+
+现有 `ZygiskTemplateVerify` AVD 为 arm64、16 KB 页大小的 Google Play 系统镜像，运行 Magisk 31。保留模拟器数据，通过 `magisk --install-module` 安装 Release ZIP `ci-182-f30bfd7`，安装器成功校验并解压主模块及两份 helper。启用 Magisk Zygisk 设置并重启后，模块目录和版本正确；配套 APK 首页实际渲染，识别 Magisk，显示该模块版本与配置路径。此处的首页状态不证明 Zygisk 已注入目标进程，也不证明自定义驱动已加载；模拟器不是 Adreno 设备，后续仅用于平台桥接与安全退出验收。
+
 ```bash
 git clone --recursive https://github.com/NKU100/zygisk-gpu-driver-loader.git
 cd zygisk-gpu-driver-loader
