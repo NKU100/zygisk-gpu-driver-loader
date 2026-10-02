@@ -83,7 +83,7 @@ APK 现已保留本次操作的“驱动已就绪”结果，重复导入且列�
 
 APK 和 KernelSU WebUI 均已验证元数据声明 arm64-v8a、但主库实际为纯文本的测试 ZIP：导入被拒绝，页面显示“不支持 arm64-v8a”，没有新增索引或遗留暂存目录，索引与应用配置哈希未变。此包没有分配给任何应用，也没有执行。更新后的 WebUI 已从 KernelSU 模块列表正常入口重新打开，首页渲染与模块状态正常；通过系统文件选择器重复导入原始 Turnip ZIP 后显示“驱动已就绪”，暂存清理、索引与绑定配置哈希未变。
 
-完整 Release ZIP `ci-180-7593c49` 已构建，真实主机 shell 的 arm64 安装测试确认模块及两份 hook 库均被解压与校验。此检查不是新 Release 包的设备安装或重启验收，手机当时仍运行既有 native 模块与热更新的 WebUI。
+完整 Release ZIP `ci-180-7593c49` 已构建，真实主机 shell 的 arm64 安装测试确认模块及两份 hook 库均被解压与校验。随后通过 KernelSU 命令行覆盖安装并重启真机，启用版本为 `ci (180-7593c49-release)`，配置与驱动索引哈希未变。Unity 新进程映射私有 Turnip 主库和 Release hook 库，窗口显示 `Turnip Adreno (TM) 750` 与棋盘场景。安装前的模块目录、配置与索引保存在设备数据目录 `validation-backup-ci180`，没有替换驱动数据。
 
 这些结果不代表所有应用或驱动兼容。使用 Turnip 时，Unity 启动日志仍报告 `VK_QCOM_fragment_density_map_offset` 缺少所需 `VK_EXT_fragment_density_map` 的扩展启用验证错误，未导致此次场景停止渲染，但不能称为无验证错误或完整 VRS 功能验收。配套 APK 的完整真机流程仍需继续验证。
 
