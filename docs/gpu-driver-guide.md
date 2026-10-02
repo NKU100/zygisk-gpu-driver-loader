@@ -118,6 +118,19 @@ cd zygisk-gpu-driver-loader
 
 模块 ZIP 输出到 `module/release/`。代码依赖固定版本的 AdrenoTools 子模块，第三方驱动不随源码或模块发布。
 
+安装器按设备架构提取原生库：32 位 ARM 与 x86 只安装对应的 32 位库，64 位设备按系统是否支持 32 位进程决定是否附带 32 位库；AdrenoTools helper 只在 arm64 安装。主机测试执行 ZIP 内的实际安装与 SHA-256 校验脚本，并检查安装后的库集合，不验证对应架构的进程运行：
+
+```bash
+sh scripts/test-module-install.sh /absolute/module.zip arm64 false
+sh scripts/test-module-install.sh /absolute/module.zip arm64 true
+sh scripts/test-module-install.sh /absolute/module.zip arm true
+sh scripts/test-module-install.sh /absolute/module.zip x86 true
+sh scripts/test-module-install.sh /absolute/module.zip x64 true
+sh scripts/test-module-install.sh /absolute/module.zip riscv64 false
+```
+
+第二个参数使用 Magisk/KernelSU 架构名，第三个参数表示是否存在 32 位 ABI；省略时测试 arm64、不含 32 位 ABI 的场景。
+
 ```bash
 sh scripts/test-native.sh
 ./gradlew :webui:testAndroidHostTest
