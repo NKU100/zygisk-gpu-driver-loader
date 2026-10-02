@@ -93,6 +93,8 @@ APK 和 KernelSU WebUI 均已验证元数据声明 arm64-v8a、但主库实际�
 
 ### Magisk 模拟器验证边界
 
+去除多余 Android 库依赖后，源码提交 `94790d9` 的 Release 包 `ci-186-94790d9` 已在 Redmi KernelSU 真机覆盖安装并重启复验。Unity 新进程记录 `HookInstalled` 与 `Loaded`，映射私有 `vulkan.ad07xx.so`，画面仍显示 `Turnip Adreno (TM) 750` 与棋盘场景。配置和驱动索引 SHA-256 均与安装前一致；旧模块及配置保存在设备 `validation-backup-ci186`。这确认该链接改动没有阻断已验证的 Adreno 加载路径，仍保留前述 Unity 扩展验证错误的限制。
+
 后续探针验证发现主模块多余的 `libandroid.so` 链接依赖会在该镜像的 Magisk companion namespace 中触发间接依赖加载失败。去除该链接后，重新构建并安装 `ci-185-a8ba69b` 测试包、重启，目标探针进程实际记录 `UnsupportedDevice`：KGSL 型号不可用，跳过自定义驱动并使用系统 Vulkan。探针成功创建 instance/device、提交命令、等待 fence，并回读验证 4096 字节。产物检查 `scripts/test-module-dependencies.sh <llvm-readelf> <module.so>` 确认主模块不依赖 `libandroid.so`；这项检查在修复前失败。此结果证明该 Magisk 环境的模块执行与型号缺失安全退出，不证明 Adreno 加载。
 
 现有 `ZygiskTemplateVerify` AVD 为 arm64、16 KB 页大小的 Google Play 系统镜像，运行 Magisk 31。保留模拟器数据，通过 `magisk --install-module` 安装 Release ZIP `ci-182-f30bfd7`，安装器成功校验并解压主模块及两份 helper。启用 Magisk Zygisk 设置并重启后，模块目录和版本正确；配套 APK 首页实际渲染，识别 Magisk，显示该模块版本与配置路径。此处的首页状态不证明 Zygisk 已注入目标进程，也不证明自定义驱动已加载；模拟器不是 Adreno 设备，后续仅用于平台桥接与安全退出验收。
