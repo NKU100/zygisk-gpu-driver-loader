@@ -1,11 +1,69 @@
 import groovy.json.JsonBuilder
+import com.android.build.api.artifact.SingleArtifact
 import org.apache.commons.codec.binary.Hex
 import org.apache.tools.ant.filters.FixCrLfFilter
 import org.apache.tools.ant.filters.ReplaceTokens
+import org.gradle.api.DefaultTask
+import org.gradle.api.GradleException
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.tasks.InputDirectory
+import org.gradle.api.tasks.OutputFile
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.TaskAction
 import java.security.MessageDigest
+import java.util.zip.ZipFile
 
 plugins {
     alias(libs.plugins.agp.app)
+}
+
+dependencies {
+    testImplementation("junit:junit:4.13.2")
+}
+
+abstract class ExtractDriverImportDex : DefaultTask() {
+    @get:InputDirectory
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val apkDirectory: DirectoryProperty
+
+    @get:OutputFile
+    abstract val dexFile: RegularFileProperty
+
+    @TaskAction
+    fun extract() {
+        val apkFiles = apkDirectory.get().asFile.listFiles { file ->
+            file.isFile && file.extension.equals("apk", ignoreCase = true)
+        } ?: throw GradleException("APK output directory is unavailable")
+        if (apkFiles.size != 1) throw GradleException("Expected one APK, found ${apkFiles.size}")
+
+        ZipFile(apkFiles.single()).use { apk ->
+            val dexEntries = apk.entries().asSequence()
+                .filter { it.name.matches(Regex("classes(\\d*)\\.dex")) }
+                .toList()
+            val helperDescriptor = "Lio/github/nku100/gpudriver/importer/DriverPathHelper;"
+                .toByteArray(Charsets.UTF_8)
+            val dex = dexEntries.singleOrNull { entry ->
+                apk.getInputStream(entry).use { input -> input.readBytes().containsSequence(helperDescriptor) }
+            } ?: throw GradleException("APK must contain exactly one DEX shard with DriverPathHelper")
+            val output = dexFile.get().asFile
+            output.parentFile.mkdirs()
+            apk.getInputStream(dex).use { input ->
+                output.outputStream().use(input::copyTo)
+            }
+        }
+    }
+
+    private fun ByteArray.containsSequence(sequence: ByteArray): Boolean {
+        if (sequence.isEmpty() || sequence.size > size) return false
+        for (start in 0..(size - sequence.size)) {
+            var offset = 0
+            while (offset < sequence.size && this[start + offset] == sequence[offset]) offset++
+            if (offset == sequence.size) return true
+        }
+        return false
+    }
 }
 
 // All git commands use Provider-based lazy evaluation (configuration-cache friendly).
@@ -92,10 +150,19 @@ androidComponents.onVariants { variant ->
     }
     val versionCode = commitCount
 
+    val extractDriverImportDexTask = tasks.register<ExtractDriverImportDex>(
+        "extractDriverImportDex$variantCapped"
+    ) {
+        dependsOn("assemble$variantCapped")
+        apkDirectory.set(variant.artifacts.get(SingleArtifact.APK))
+        dexFile.set(layout.buildDirectory.file("intermediates/driver-importer/$variantLowered/driver-importer.dex"))
+    }
+
     val prepareModuleFilesTask = tasks.register<Sync>("prepareModuleFiles$variantCapped") {
         group = "module"
-        dependsOn("assemble$variantCapped", ":webui:buildWebUI")
+        dependsOn("assemble$variantCapped", ":webui:buildWebUI", extractDriverImportDexTask)
         into(moduleDir)
+        from(extractDriverImportDexTask.flatMap { it.dexFile })
         // Declare inputs so Gradle invalidates cache when values change
         inputs.property("moduleId", moduleId)
         inputs.property("moduleName", moduleName)

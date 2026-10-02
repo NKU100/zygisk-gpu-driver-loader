@@ -57,6 +57,13 @@ ui_print "- Extracting module files"
 extract "$ZIPFILE" 'module.prop'     "$MODPATH"
 extract "$ZIPFILE" 'post-fs-data.sh' "$MODPATH"
 extract "$ZIPFILE" 'service.sh'      "$MODPATH"
+extract "$ZIPFILE" 'driver-importer.dex' "$MODPATH"
+if [ ! -f "$MODPATH/driver-importer.dex" ]; then
+  ui_print "*********************************************************"
+  ui_print "! Unable to extract driver-importer.dex!"
+  ui_print "! This zip may be corrupted, please try downloading again"
+  abort    "*********************************************************"
+fi
 mv "$TMPDIR/sepolicy.rule" "$MODPATH"
 
 HAS32BIT=false && ([ $(getprop ro.product.cpu.abilist32) ] || [ $(getprop ro.system.product.cpu.abilist32) ]) && HAS32BIT=true
