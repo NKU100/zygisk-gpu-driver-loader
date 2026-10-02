@@ -45,6 +45,33 @@ class DriverRepositoryTest {
     }
 
     @Test
+    fun shortReadsAreCombinedBeforeRootTransfer() {
+        val source = ByteArray(DriverRepository.CHUNK_SIZE * 2 + 17) { (it * 37).toByte() }
+        val chunks = mutableListOf<ByteArray>()
+        var offset = 0
+        var digest = ""
+
+        runSuspend {
+            digest = DriverRepository.transfer(
+                read = { buffer ->
+                    if (offset == source.size) -1 else {
+                        val count = minOf(137, buffer.size, source.size - offset)
+                        source.copyInto(buffer, 0, offset, offset + count)
+                        offset += count
+                        count
+                    }
+                },
+                appendBase64 = { chunks += Base64.decode(it) },
+            )
+        }
+
+        assertEquals(3, chunks.size)
+        assertEquals(17, chunks.last().size)
+        assertContentEquals(source, chunks.flatMap { it.toList() }.toByteArray())
+        assertEquals(Sha256.digestHex(source), digest)
+    }
+
+    @Test
     fun boundDriverCannotBeDeleted() {
         val config = ModuleConfig(packageSettings = mapOf("example.app" to PackageSettings(driverId = "driver-a")))
         assertFalse(DriverRepository.canDelete("driver-a", config))
