@@ -86,6 +86,8 @@ else
   ui_print "- Extracting arm64 libraries"
   extract "$ZIPFILE" "lib/arm64-v8a/lib$SONAME.so" "$MODPATH/zygisk" true
   mv "$MODPATH/zygisk/lib$SONAME.so" "$MODPATH/zygisk/arm64-v8a.so"
+  extract "$ZIPFILE" "lib/arm64-v8a/libhook_impl.so" "$MODPATH/zygisk" true
+  extract "$ZIPFILE" "lib/arm64-v8a/libmain_hook.so" "$MODPATH/zygisk" true
 fi
 
 mkdir "$MODPATH/webroot"
