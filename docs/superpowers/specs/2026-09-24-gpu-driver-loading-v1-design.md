@@ -1,12 +1,12 @@
 # 按 App 加载 GPU 驱动第一阶段设计
 
-状态：范围已确认；Native hook 路径待设备验证
+状态：Native 私有暂存、系统 Vulkan loader 拦截与 GPU 提交已在 Redmi Adreno 750 验证；WebUI 导入和真实 App 渲染验收继续进行
 
-实现前置约束：`libadrenotools` 的公开接口要求 `hookLibDir` 指向目标 App 的
-`nativeLibraryDir`。Zygisk 模块目录、目标 App 私有目录和该目录不是同一个路径，
-因此“将 hook 库复制到 App 私有目录后直接调用”目前只能作为待验证假设，不能视为
-最终实现。第一道 Native 验证必须在真实的 arm64 Adreno 设备上确认 hook 库的可见路径；
-如果该路径不可行，需要先调整加载策略，再继续完整 UI 和驱动导入实现。
+`libadrenotools` 的公开 `adrenotools_open_libvulkan()` 接口要求 hook 目录对应目标
+App 的 `nativeLibraryDir`。本模块不调用该私有 loader 接口，而是直接复用
+`hook_impl.cpp` 的 namespace 加载逻辑，并拦截 App 使用的系统 loader。Redmi
+API 36 实测可以从 App 的私有目录加载 helper；此结论不代表其他 Android 版本
+或设备已经兼容。
 
 ## 目标
 
@@ -15,7 +15,7 @@
 - 使用现有 WebUI 的 `targetPackages` 选择目标 App。
 - 从本地选择 AdrenoTools 驱动 ZIP，解压并登记已安装驱动。
 - 为每个目标 App 选择一个已安装驱动。
-- 在 `preAppSpecialize()` 阶段安装 `libadrenotools` 的 Vulkan 拦截。
+- 在 `preAppSpecialize()` 阶段完成校验和暂存，在 `postAppSpecialize()` 阶段安装系统 Vulkan loader 的 PLT 拦截。
 - 只支持 Android 9+、arm64-v8a、Qualcomm Adreno、Vulkan。
 - 失败时保留系统默认 Vulkan 驱动，不影响未选中的 App。
 
@@ -56,22 +56,42 @@ preAppSpecialize()
   ↓
 只有型号明确标识 Adreno 才继续；缺失、未知或非 Adreno 均回退，不在 zygote 初始化 Vulkan
   ↓
-通过 Api::getModuleDir() 读取模块内的 hook 与已安装 driver 文件
+companion 校验 registry 文件，通过 zygote 创建的匿名内存文件返回只读快照
   ↓
-将驱动复制到 app_data_dir/files/<moduleId>/gpu-driver/；按真实设备验证结果准备 hook 库路径
+pre 阶段校验 meta.json、libraryName 和 arm64 ELF
   ↓
-校验 meta.json、libraryName 和目标 ABI
+请求 root companion 再次核对当前包绑定与 UID/GID，在 App 私有 files/<moduleId>/ 下原子暂存驱动与 helper
   ↓
-调用 adrenotools_open_libvulkan(... ADRENOTOOLS_DRIVER_CUSTOM ...)
+postAppSpecialize() 安装系统 libvulkan.so 的 android_load_sphal_library PLT hook
   ↓
-记录成功或回退原因
+App 请求 Vulkan 驱动时进入 AdrenoTools hook_android_load_sphal_library
+  ↓
+核对返回句柄的 Vulkan 入口或 HMI 所在文件的设备号和 inode，记录加载或系统回退状态
 ```
 
-模块目录只能在 `preAppSpecialize()` 阶段安全访问。驱动复制目标使用 `app_data_dir` 下的应用私有目录，并设置为目标 App 的 UID/GID，避免 Vulkan 驱动在进程完成 specialize 后再次访问 `/data/adb` 路径。hook 库不能直接套用这个结论，必须满足 `libadrenotools` 对 `nativeLibraryDir` 的要求，具体暂存或挂载策略由真实设备验证决定。
+普通 App 与 zygote 均不直接打开 `/data/adb` 的驱动文件。即便由 root 打开后
+传递 FD，SELinux 仍可能拒绝 zygote 读取 `adb_data_file`。预校验使用由 zygote
+创建、companion 写入、返回后封存的 memfd，避免放宽 SELinux。
+
+磁盘暂存也由 root companion 执行：请求必须匹配当前配置的包和驱动绑定，UID/GID
+必须匹配应用目录；不接受调用方指定任意路径。优先使用对应用户的 CE 目录，首次解锁前
+CE 不存在时使用同一用户、同一包的 DE 目录。应用进程在 specialize 后只访问自己的
+私有副本。每个 UID 的暂存发布串行执行，避免同一包的主进程和子进程冷启动竞争。
 
 复制逻辑拒绝符号链接，限制路径只能位于固定的 `gpu-driver` 子目录，并使用临时目录加原子改名，避免进程看到不完整的驱动文件。
 
 `libadrenotools` 使用 `ADRENOTOOLS_DRIVER_CUSTOM`。本阶段暂不启用 file redirect 和 GPU memory mapping 功能，以减少权限和兼容性变量。
+
+PPSSPP 自己从私有 loader 句柄解析 Vulkan 函数，普通目标 App 不会使用模块打开的私有句柄。
+模块因此将 AdrenoTools 的 `hook_impl.cpp` 编入注入库，初始化进程生命周期内有效的
+`HookImplParams`，并拦截系统 loader 的驱动请求，而不把 `adrenotools_open_libvulkan()`
+返回非空当作目标 App 已换驱动的证明。
+
+安装成功仅记录 `HookInstalled`。驱动请求返回空句柄时调用原系统函数回退；上游内部
+回退也可能返回非空系统驱动句柄，因此只有返回句柄的 Vulkan 入口或 Android HAL 的
+`HMI` 对应已校验的私有驱动文件才记录 `Loaded`。系统文件记录 `SystemFallback`；
+入口来源不可确认时调用原系统加载函数，不把无法识别的非空句柄交给 loader。
+这些状态描述加载，不证明逻辑设备创建或渲染成功。
 
 ## WebUI 与平台桥接
 
@@ -92,7 +112,9 @@ preAppSpecialize()
 - `customize.sh` 将 hook 库放入模块的 `zygisk/` 目录，将 `drivers/` 目录保留在模块根目录。
 - 不把任何第三方驱动二进制提交到模板仓库；驱动只存在于设备的模块数据目录。
 
-由于 `libadrenotools` 的公开 API 文档要求 hook 目录对应目标 App 的 `nativeLibraryDir`，真实设备验证必须确认 Zygisk 场景如何提供这个路径；如果某些 Android 版本拒绝模块目录或 App 私有目录，必须在实现阶段调整 hook 库暂存策略，而不是放宽到外部存储。
+安装器按现有 SHA-256 校验流程解压两个 helper 到模块 `zygisk/` 目录，再由 companion
+暂存到 App 私有目录。驱动及 helper 的 App 副本为 `0500`，元数据为 `0400`；复用
+前检查内容、属主和权限，不覆盖 App 控制的不匹配文件。
 
 ## 配置与生命周期
 
@@ -104,6 +126,25 @@ preAppSpecialize()
 - 目标 App 需要重启后才会使用新的驱动。
 
 ## 验证
+
+2026-10-02，正式模块在 Redmi 23117RK66C、Android API 36、arm64、Adreno 750、
+KernelSU 32601 / Zygisk Next 1.5.0 上通过以下验证。设备保持首次解锁前的锁屏状态。
+
+- 探针 APK 只有 `libvulkan_trigger.so`，不含 AdrenoTools helper 或驱动，也不依赖临时 Zygisk 模块。
+- companion 在 App DE 私有目录暂存 helper 和用户已有的 Qualcomm 762.46 驱动。
+- 模块记录 `HookInstalled` 后，实际 driver request 记录 `Loaded`；版本日志为 `0762.46`。
+- `/proc/<pid>/maps` 映射私有 driver 和 helper；候选 SHA-256 为 `db493626626a79e5c929ec7d333177aab17a456497a5ad6d2d8a66a8f338c8cb`，不同于未修改的系统 driver。
+- `vkCreateInstance`、物理设备枚举、`vkCreateDevice`、`vkQueueSubmit`、fence 等待均成功。
+- `vkCmdFillBuffer` 写入 4096 字节 `0xc0dec0de`，映射并回读全部字节一致。
+- 暂存驱动在 hook 安装后不可用时，模块记录 `SystemFallback`，系统 762.36.1 仍能完成同样的 GPU 提交和回读。
+- 冷缓存并发启动同一包的两个进程，不再因临时目录和发布竞争而使其中一个回退。
+
+该驱动仍使用设备的 vendor 支持库，不代表完整替换 Qualcomm 全套库。此验收不证明
+图形 pipeline、swapchain、窗口渲染或性能；真实 App 渲染与 WebUI 本地 ZIP 导入仍需
+继续验证。运行时 driver request 状态目前在 logcat；持久化到 WebUI 日志尚需完善。
+
+主机测试入口为 `sh scripts/test-native.sh`。安装检查为
+`sh scripts/test-module-install.sh <module-debug.zip>`，会运行包内实际安装脚本和校验。
 
 1. 构建 arm64 Debug 模块，检查 ZIP 中包含主 Zygisk 库和两个 hook 库，不包含第三方驱动二进制。
 2. 在 WebUI 和 Android APK 各导入一个合法的 AdrenoTools ZIP，确认索引和目录内容一致。

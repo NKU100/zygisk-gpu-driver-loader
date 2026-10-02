@@ -24,7 +24,7 @@
  * Companion protocol (uint8_t opcode first):
  *   OP_READ_CONFIG (0): companion replies with uint32_t len + config bytes.
  *   OP_WRITE_LOG   (1): module sends uint32_t len + log line; companion returns nothing.
- *   OpenDriverOpcode (2): bounded driver ID; companion replies with a registry directory FD.
+ *   OpenDriverOpcode (2): bounded driver ID and filename; companion replies with a validated file FD.
  */
 
 #include <unistd.h>
@@ -138,7 +138,9 @@ static void companion_handler(int sock) {
         if (len > 0) socket_transfer(sock, config.data(), len, true);
 
     } else if (op == gpu::OpenDriverOpcode) {
-        gpu::serveDriverDirectory(sock);
+        gpu::serveDriverFile(sock, op);
+    } else if (op == gpu::PrepareDriverOpcode) {
+        gpu::serveDriverPreparation(sock);
     } else if (op == OP_WRITE_LOG) {
         uint32_t len = 0;
         if (!socket_transfer(sock, &len, sizeof(len), false) || len == 0 || len > 65536) return;
@@ -235,6 +237,20 @@ public:
         preSpecialize(processName, dataDir, args->uid, args->gid);
     }
 
+    void postAppSpecialize(const AppSpecializeArgs *) override {
+        if (prepared.result.status != gpu::DriverLoadStatus::Prepared) return;
+        const auto &result = driverLoader.activate(api, prepared);
+        std::string diagnostic = "target=" + targetPackage + " process=" + processName +
+            " status=" + gpu::statusName(result.status) + " reason=" + result.reason +
+            " driverPath=" + result.driverPath + " hookPath=" + result.hookPath;
+        const bool installed = result.status == gpu::DriverLoadStatus::HookInstalled;
+        if (!installed) {
+            diagnostic += "; fallback to system driver";
+        }
+        remoteLog(api, installed ? ANDROID_LOG_INFO : ANDROID_LOG_WARN,
+                 LOG_TAG, diagnostic.c_str());
+    }
+
     void preServerSpecialize(ServerSpecializeArgs *args) override {
         api->setOption(zygisk::Option::DLCLOSE_MODULE_LIBRARY);
     }
@@ -244,8 +260,12 @@ private:
     JNIEnv *env = nullptr;
     bool handled = false;
     gpu::DriverLoader driverLoader;
+    gpu::Prepared prepared{{gpu::DriverLoadStatus::NotTargeted, "not prepared", {}, {}}, {}, {}, {}};
+    std::string processName;
+    std::string targetPackage;
 
     void preSpecialize(const std::string &processName, const std::string &dataDir, uid_t uid, gid_t gid) {
+        this->processName = processName;
         // Read config from companion (OP_READ_CONFIG)
         std::string configJson;
         int sock = api->connectCompanion();
@@ -264,18 +284,29 @@ private:
         }
 
         const auto selection = gpu::selectDriver(configJson, processName);
-        const auto &result = driverLoader.load(api, selection, dataDir, uid, gid);
-        std::string diagnostic = "process=" + processName + " status=" + gpu::statusName(result.status) +
-            " reason=" + result.reason + " driverPath=" + result.driverPath + " hookPath=" + result.hookPath;
-        if (result.status != gpu::DriverLoadStatus::Loaded) {
-            diagnostic += "; fallback to system driver";
+        targetPackage = selection.packageName;
+        prepared = driverLoader.prepare(api, selection, dataDir, uid, gid);
+        const bool targeted = selection.result.status != gpu::DriverLoadStatus::NotTargeted;
+        const bool hasBinding = !selection.driverId.empty();
+        switch (gpu::driverLifecycleAction(targeted, hasBinding,
+                                           prepared.result.status == gpu::DriverLoadStatus::Prepared)) {
+        case gpu::DriverLifecycleAction::DropModuleLibrary:
             api->setOption(zygisk::Option::DLCLOSE_MODULE_LIBRARY);
+            break;
+        case gpu::DriverLifecycleAction::UseSystemDriver: {
+            api->setOption(zygisk::Option::DLCLOSE_MODULE_LIBRARY);
+            std::string diagnostic = "target=" + targetPackage + " process=" + processName +
+                " status=" + gpu::statusName(prepared.result.status) + " reason=" + prepared.result.reason +
+                "; fallback to system driver";
+            remoteLog(api, ANDROID_LOG_WARN, LOG_TAG, diagnostic.c_str());
+            break;
         }
-        if (result.status == gpu::DriverLoadStatus::NotTargeted) {
-            __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, "%s", diagnostic.c_str());
+        case gpu::DriverLifecycleAction::KeepModuleLibrary:
+            break;
+        }
+        if (!targeted) {
             return;
         }
-        remoteLog(api, ANDROID_LOG_INFO, LOG_TAG, diagnostic.c_str());
 
         yyjson_doc *doc = yyjson_read(configJson.data(), configJson.size(), 0);
         if (!doc) {

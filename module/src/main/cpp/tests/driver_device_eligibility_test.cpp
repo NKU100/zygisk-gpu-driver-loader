@@ -30,7 +30,42 @@ bool readsGpuModelThroughSysfsLink() {
 }
 
 int main() {
+    assert(gpu::appDataPathAllowed("/data/user/0/com.example", "com.example", 10001));
+    assert(gpu::appDataPathAllowed("/data/user_de/10/com.example", "com.example", 1010001));
+    assert(gpu::appDataPathAllowed("/data/data/com.example", "com.example", 10001));
+    assert(!gpu::appDataPathAllowed("/data/user/0/com.other", "com.example", 10001));
+    assert(!gpu::appDataPathAllowed("/data/user_de/0/com.example", "com.example", 1010001));
+    assert(!gpu::appDataPathAllowed("/data/data/com.example", "com.example", 1010001));
+    assert(!gpu::appDataPathAllowed("/data/user/0/com.example/../com.other", "com.example", 10001));
+    assert(!gpu::appDataPathAllowed("/data/user/0/com.example", "com.example", 9999));
     assert(readsGpuModelThroughSysfsLink());
+
+    assert(gpu::stagedFileModeAllowed(gpu::StagedFileKind::NativeLibrary, 0500));
+    assert(gpu::stagedFileModeAllowed(gpu::StagedFileKind::Metadata, 0400));
+    assert(!gpu::stagedFileModeAllowed(gpu::StagedFileKind::NativeLibrary, 0400));
+    assert(!gpu::stagedFileModeAllowed(gpu::StagedFileKind::NativeLibrary, 0700));
+    assert(!gpu::stagedFileModeAllowed(gpu::StagedFileKind::NativeLibrary, 0501));
+    assert(!gpu::stagedFileModeAllowed(gpu::StagedFileKind::Metadata, 0500));
+    assert(!gpu::stagedFileModeAllowed(gpu::StagedFileKind::Metadata, 0600));
+    assert(!gpu::stagedFileModeAllowed(gpu::StagedFileKind::Metadata, 0444));
+    assert(!gpu::stagedFileModeAllowed(gpu::StagedFileKind::Metadata, 0401));
+
+    assert(gpu::privateDirectoryMetadataAllowed(10000, 10000, 0700, 10000, 10000));
+    assert(!gpu::privateDirectoryMetadataAllowed(10000, 10000, 0755, 10000, 10000));
+    assert(!gpu::privateDirectoryMetadataAllowed(10000, 10000, 0750, 10000, 10000));
+    assert(!gpu::privateDirectoryMetadataAllowed(10000, 10000, 0710, 10000, 10000));
+    assert(!gpu::privateDirectoryMetadataAllowed(10000, 10000, 0705, 10000, 10000));
+    assert(!gpu::privateDirectoryMetadataAllowed(10000, 10000, 0701, 10000, 10000));
+    assert(!gpu::privateDirectoryMetadataAllowed(10000, 10000, 0720, 10000, 10000));
+    assert(!gpu::privateDirectoryMetadataAllowed(10000, 10000, 0702, 10000, 10000));
+    assert(!gpu::privateDirectoryMetadataAllowed(10001, 10000, 0700, 10000, 10000));
+    assert(!gpu::privateDirectoryMetadataAllowed(10000, 10001, 0700, 10000, 10000));
+
+    assert(gpu::driverLifecycleAction(false, false, false) == gpu::DriverLifecycleAction::DropModuleLibrary);
+    assert(gpu::driverLifecycleAction(false, true, true) == gpu::DriverLifecycleAction::DropModuleLibrary);
+    assert(gpu::driverLifecycleAction(true, false, false) == gpu::DriverLifecycleAction::DropModuleLibrary);
+    assert(gpu::driverLifecycleAction(true, true, true) == gpu::DriverLifecycleAction::KeepModuleLibrary);
+    assert(gpu::driverLifecycleAction(true, true, false) == gpu::DriverLifecycleAction::UseSystemDriver);
 
     int registryRequests = 0;
     auto requestRegistry = [&] { ++registryRequests; };
