@@ -95,7 +95,7 @@ static constexpr off_t LOG_TRIM_BYTES = 256 * 1024;
 static void companion_appendLog(const std::string &line) {
     static std::mutex logMutex;
     std::lock_guard lock(logMutex);
-    int fd = open(LOG_PATH, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    int fd = open(LOG_PATH, O_RDWR | O_CREAT | O_APPEND | O_CLOEXEC, 0644);
     if (fd < 0) return;
 
     struct stat st{};
