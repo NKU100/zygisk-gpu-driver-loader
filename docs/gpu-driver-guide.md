@@ -65,7 +65,9 @@ KernelSU WebUI 已完成原始 Turnip ZIP 的系统文件选择、导入、列�
 
 此轮真机验证发现应用既有 `files` 目录可能为 `0771`。暂存现在接受属主与属组匹配的 `0700` 或 `0771` 应用目录，不修改它的权限；模块自己的子目录仍要求 `0700`。
 
-这些结果不代表所有应用或驱动兼容。Unity 启动日志仍报告 `VK_QCOM_fragment_density_map_offset` 缺少所需 `VK_EXT_fragment_density_map` 的扩展启用验证错误，未导致此次场景停止渲染，但不能称为无验证错误或完整 VRS 功能验收。WebUI 删除保护、重启后的系统驱动切换，以及 Magisk 配置 APK 的完整真机流程仍需继续验证。
+KernelSU WebUI 的已绑定驱动删除保护已验证：详情提示先解除应用绑定，点击删除不会进入确认页，驱动索引与绑定配置保留。通过 WebUI 切换为系统驱动并执行“重启应用”后，Unity 新进程映射 `/vendor/lib64/hw/vulkan.adreno.so`，没有映射模块的私有驱动或 hook 库，窗口继续显示棋盘场景与几何体。
+
+这些结果不代表所有应用或驱动兼容。使用 Turnip 时，Unity 启动日志仍报告 `VK_QCOM_fragment_density_map_offset` 缺少所需 `VK_EXT_fragment_density_map` 的扩展启用验证错误，未导致此次场景停止渲染，但不能称为无验证错误或完整 VRS 功能验收。未绑定驱动的删除确认流程，以及 Magisk 配置 APK 的完整真机流程仍需继续验证。
 
 ## 从源码构建
 
