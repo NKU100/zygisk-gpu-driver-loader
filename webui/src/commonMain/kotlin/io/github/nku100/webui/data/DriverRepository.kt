@@ -151,6 +151,7 @@ object DriverRepository {
             val libraries = (listOf(driver.libraryName) + entries.filter {
                 it.isRegularFile && it.path.endsWith(".so")
             }.map { it.path }).distinct()
+            val verifiedHashes = mutableMapOf<String, String>()
             var expandedSize = 0L
             for (name in listOf("meta.json") + libraries) {
                 val path = "$stage/$name"
@@ -180,13 +181,17 @@ object DriverRepository {
                 }
                 val rootHash = checked("sha256sum ${quote(path)}", execute).stdout.substringBefore(' ').lowercase()
                 if (rootHash != sourceHash.hexDigest()) throw DriverStoreException(DriverArchiveError.TRANSFER_FAILED)
+                verifiedHashes[name] = rootHash
             }
             return RepositoryMutationGuard.mutate {
                 val latest = readIndex(execute)
                 val existing = latest.firstOrNull { it.driverId == driver.driverId }
                 if (existing != null) {
-                    val installed = execute("test -f ${quote("$final/meta.json")} && test -f ${quote("$final/${existing.libraryName}")}")
-                    if (installed.errno != 0) throw DriverStoreException(DriverArchiveError.STORAGE_ERROR)
+                    for ((name, expectedHash) in verifiedHashes) {
+                        val installedHash = checked("sha256sum ${quote("$final/$name")}", execute)
+                            .stdout.substringBefore(' ').lowercase()
+                        if (installedHash != expectedHash) throw DriverStoreException(DriverArchiveError.STORAGE_ERROR)
+                    }
                     return@mutate DriverImportResult.Accepted(existing.info())
                 }
                 val occupied = execute("test -e ${quote(final)} || test -L ${quote(final)}")

@@ -18,6 +18,23 @@ import kotlin.test.assertTrue
 
 class DriverRepositoryMutationTest {
     @Test
+    fun duplicateImportRejectsMissingOrChangedDependency() {
+        for (missing in listOf(true, false)) {
+            val shell = InMemoryRootShell()
+            val dependencies = mapOf("notgsl.so" to arm64ElfHeader())
+            val first = assertIs<DriverImportResult.Accepted>(completed {
+                publish(shell, 'a', 1L, extraLibraries = dependencies)
+            })
+            val path = "${shell.root}/${first.driver.driverId}/notgsl.so"
+            if (missing) shell.files.remove(path) else shell.files[path] = arm64ElfHeader() + byteArrayOf(1)
+            val result = completed { publish(shell, 'a', 2L, extraLibraries = dependencies) }
+            assertEquals(DriverArchiveError.STORAGE_ERROR, assertIs<DriverImportResult.Rejected>(result).error)
+            assertEquals(1L, shell.index().single().importedAtEpochMillis)
+            assertFalse(shell.directories.any { it.startsWith("${shell.root}/.stage-") })
+        }
+    }
+
+    @Test
     fun metadataCannotOverrideWrongElfArchitectureOrLibraryType() {
         for (header in listOf(
             arm64ElfHeader().apply { this[4] = 1 },
