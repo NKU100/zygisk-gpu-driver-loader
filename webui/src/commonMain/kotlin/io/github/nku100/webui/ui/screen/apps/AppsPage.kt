@@ -83,6 +83,7 @@ import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
 @Immutable
 data class AppsUiState(
+    val packageListFailed: Boolean = false,
     val packages: List<PackageInfo> = emptyList(),
     val targetPackages: Set<String> = emptySet(),
     val loading: Boolean = true,
@@ -138,50 +139,59 @@ fun AppsPage(
 
     Scaffold(
         topBar = {
-            searchStatus.TopAppBarAnim(
-                modifier = Modifier.topBarInsetsPadding(),
-                blurBackdrop = blurBackdrop,
-            ) {
-                TopAppBar(
-                    color = if (enableBlur) Color.Transparent else colorScheme.surface,
-                    title = stringResource(Res.string.tab_apps),
-                    actions = {
-                        val showTopPopup = remember { mutableStateOf(false) }
-                        OverlayListPopup(
-                            show = showTopPopup.value,
-                            popupPositionProvider = ListPopupDefaults.ContextMenuPositionProvider,
-                            alignment = PopupPositionProvider.Align.TopEnd,
-                            onDismissRequest = { showTopPopup.value = false },
-                            content = {
-                                ListPopupColumn {
-                                    DropdownImpl(
-                                        text = stringResource(Res.string.show_system_apps),
-                                        isSelected = state.showSystemApps,
-                                        optionSize = 1,
-                                        onSelectedIndexChange = {
-                                            actions.onToggleShowSystemApps()
-                                            showTopPopup.value = false
-                                        },
-                                        index = 0,
-                                    )
+            Column {
+                searchStatus.TopAppBarAnim(
+                    modifier = Modifier.topBarInsetsPadding(),
+                    blurBackdrop = blurBackdrop,
+                ) {
+                    TopAppBar(
+                        color = if (enableBlur) Color.Transparent else colorScheme.surface,
+                        title = stringResource(Res.string.tab_apps),
+                        actions = {
+                            val showTopPopup = remember { mutableStateOf(false) }
+                            OverlayListPopup(
+                                show = showTopPopup.value,
+                                popupPositionProvider = ListPopupDefaults.ContextMenuPositionProvider,
+                                alignment = PopupPositionProvider.Align.TopEnd,
+                                onDismissRequest = { showTopPopup.value = false },
+                                content = {
+                                    ListPopupColumn {
+                                        DropdownImpl(
+                                            text = stringResource(Res.string.show_system_apps),
+                                            isSelected = state.showSystemApps,
+                                            optionSize = 1,
+                                            onSelectedIndexChange = {
+                                                actions.onToggleShowSystemApps()
+                                                showTopPopup.value = false
+                                            },
+                                            index = 0,
+                                        )
+                                    }
                                 }
-                            }
-                        )
-                        IconButton(
-                            modifier = Modifier.padding(end = 16.dp),
-                            onClick = { showTopPopup.value = true },
-                            holdDownState = showTopPopup.value,
-                        ) {
-                            Icon(
-                                imageVector = MiuixIcons.MoreCircle,
-                                tint = colorScheme.onSurface,
-                                contentDescription = stringResource(Res.string.more_options),
                             )
-                        }
-                    },
-                    scrollBehavior = scrollBehavior,
-                    defaultWindowInsetsPadding = topBarDefaultWindowInsetsPadding,
-                )
+                            IconButton(
+                                modifier = Modifier.padding(end = 16.dp),
+                                onClick = { showTopPopup.value = true },
+                                holdDownState = showTopPopup.value,
+                            ) {
+                                Icon(
+                                    imageVector = MiuixIcons.MoreCircle,
+                                    tint = colorScheme.onSurface,
+                                    contentDescription = stringResource(Res.string.more_options),
+                                )
+                            }
+                        },
+                        scrollBehavior = scrollBehavior,
+                        defaultWindowInsetsPadding = topBarDefaultWindowInsetsPadding,
+                    )
+                }
+                if (state.packageListFailed) {
+                    top.yukonga.miuix.kmp.basic.BasicComponent(
+                        title = stringResource(Res.string.root_list_failed),
+                        summary = stringResource(Res.string.root_retry_hint),
+                        onClick = actions.onRefresh,
+                    )
+                }
             }
         },
         popupHost = {

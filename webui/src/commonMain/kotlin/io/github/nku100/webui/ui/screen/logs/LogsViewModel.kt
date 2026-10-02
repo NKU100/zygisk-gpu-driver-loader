@@ -25,47 +25,6 @@ class LogsViewModel : ViewModel() {
         load()
     }
 
-    /**
-     * Parse a single logcat line.
-     *
-     * Logcat formats handled:
-     *   threadtime / time:  MM-DD HH:MM:SS.mmm  PID  TID  LEVEL tag  : message
-     *   brief:              LEVEL/tag(PID): message
-     *   tag:                LEVEL/tag: message
-     *   raw / unknown:      treat entire line as message
-     */
-    private fun parseLine(raw: String): LogLine {
-        // threadtime / time format: "04-08 12:34:56.789  1234  5678 I ZygiskWebUI: msg"
-        val threadtime = REGEX_THREADTIME.find(raw)
-        if (threadtime != null) {
-            val (lvlChar, tag, msg) = threadtime.destructured
-            return LogLine(level = charToLevel(lvlChar[0]), tag = tag.trimEnd(':'), message = msg, raw = raw)
-        }
-        // brief format: "I/ZygiskWebUI(1234): msg"
-        val brief = REGEX_BRIEF.find(raw)
-        if (brief != null) {
-            val (lvlChar, tag, msg) = brief.destructured
-            return LogLine(level = charToLevel(lvlChar[0]), tag = tag, message = msg, raw = raw)
-        }
-        // tag format: "I/ZygiskWebUI: msg"
-        val tag = REGEX_TAG.find(raw)
-        if (tag != null) {
-            val (lvlChar, tagName, msg) = tag.destructured
-            return LogLine(level = charToLevel(lvlChar[0]), tag = tagName, message = msg, raw = raw)
-        }
-        return LogLine(level = LogLevel.UNKNOWN, tag = "", message = raw, raw = raw)
-    }
-
-    private fun charToLevel(c: Char): LogLevel = when (c) {
-        'V' -> LogLevel.VERBOSE
-        'D' -> LogLevel.DEBUG
-        'I' -> LogLevel.INFO
-        'W' -> LogLevel.WARN
-        'E' -> LogLevel.ERROR
-        'F', 'S' -> LogLevel.FATAL
-        else -> LogLevel.UNKNOWN
-    }
-
     fun load() {
         if (!hasPlatformApi()) {
             _uiState.update { it.copy(lines = MOCK_LINES, visibleLines = MOCK_LINES) }
@@ -109,7 +68,7 @@ class LogsViewModel : ViewModel() {
             val lines = withContext(Dispatchers.Default) {
                 content.lines()
                     .filter { it.isNotBlank() }
-                    .map { parseLine(it) }
+                    .map(::parseLogLine)
             }
             _uiState.update { state ->
                 val visible = applyFilters(lines, state.searchStatus.searchText, state.selectedLevel)
@@ -147,11 +106,6 @@ class LogsViewModel : ViewModel() {
         /** Must match LOG_PATH in example.cpp */
         val LOG_PATH = ModuleInfo.CONFIG_PATH.replace("config.json", "module.log")
 
-        private val REGEX_THREADTIME = Regex(
-            """^\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d+\s+\d+\s+\d+\s+([VDIWEFS])\s+(\S+)\s*:\s*(.*)$"""
-        )
-        private val REGEX_BRIEF = Regex("""^([VDIWEFS])/(\S+?)\(\s*\d+\):\s*(.*)$""")
-        private val REGEX_TAG = Regex("""^([VDIWEFS])/(\S+?):\s*(.*)$""")
     }
 
     fun updateSearchStatus(status: SearchStatus) {
@@ -194,10 +148,61 @@ class LogsViewModel : ViewModel() {
     }
 
     private val MOCK_LINES = listOf(
-        parseLine("04-08 04:49:52.878  3285  3285 I SampleHook: [ZygiskWebUI] process=com.android.chrome logLevel=verbose dumpStackTrace=false"),
-        parseLine("04-08 04:50:01.123  4000  4000 D SampleHook: [ZygiskWebUI] preAppSpecialize called for com.google.android.gms"),
-        parseLine("04-08 04:50:02.456  4001  4001 W SampleHook: [ZygiskWebUI] config not found for com.example.unknown, skipping"),
-        parseLine("04-08 04:50:03.789  4002  4002 E SampleHook: [ZygiskWebUI] Failed to open config.json: No such file or directory"),
-        parseLine("04-08 04:50:05.000  4003  4003 V SampleHook: [ZygiskWebUI] onLoad complete"),
+        parseLogLine("04-08 04:49:52.878  3285  3285 I SampleHook: [ZygiskWebUI] process=com.android.chrome logLevel=verbose dumpStackTrace=false"),
+        parseLogLine("04-08 04:50:01.123  4000  4000 D SampleHook: [ZygiskWebUI] preAppSpecialize called for com.google.android.gms"),
+        parseLogLine("04-08 04:50:02.456  4001  4001 W SampleHook: [ZygiskWebUI] config not found for com.example.unknown, skipping"),
+        parseLogLine("04-08 04:50:03.789  4002  4002 E SampleHook: [ZygiskWebUI] Failed to open config.json: No such file or directory"),
+        parseLogLine("04-08 04:50:05.000  4003  4003 V SampleHook: [ZygiskWebUI] onLoad complete"),
     )
+}
+
+private val REGEX_THREADTIME = Regex(
+    """^(\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d+)\s+(\d+)\s+(\d+)\s+([VDIWEFS])\s+(\S+)\s*:\s*(.*)$"""
+)
+private val REGEX_BRIEF = Regex("""^([VDIWEFS])/(\S+?)\(\s*(\d+)\):\s*(.*)$""")
+private val REGEX_TAG = Regex("""^([VDIWEFS])/(\S+?):\s*(.*)$""")
+
+internal fun parseLogLine(raw: String): LogLine {
+    val threadtime = REGEX_THREADTIME.find(raw)
+    if (threadtime != null) {
+        val (timestamp, pid, tid, level, tag, message) = threadtime.destructured
+        return LogLine(
+            level = charToLevel(level[0]),
+            tag = tag.trimEnd(':'),
+            message = message,
+            raw = raw,
+            timestamp = timestamp,
+            pid = pid,
+            tid = tid,
+        )
+    }
+
+    val brief = REGEX_BRIEF.find(raw)
+    if (brief != null) {
+        val (level, tag, pid, message) = brief.destructured
+        return LogLine(
+            level = charToLevel(level[0]),
+            tag = tag,
+            message = message,
+            raw = raw,
+            pid = pid,
+        )
+    }
+
+    val tag = REGEX_TAG.find(raw)
+    if (tag != null) {
+        val (level, tagName, message) = tag.destructured
+        return LogLine(level = charToLevel(level[0]), tag = tagName, message = message, raw = raw)
+    }
+    return LogLine(level = LogLevel.UNKNOWN, tag = "", message = raw, raw = raw)
+}
+
+private fun charToLevel(c: Char): LogLevel = when (c) {
+    'V' -> LogLevel.VERBOSE
+    'D' -> LogLevel.DEBUG
+    'I' -> LogLevel.INFO
+    'W' -> LogLevel.WARN
+    'E' -> LogLevel.ERROR
+    'F', 'S' -> LogLevel.FATAL
+    else -> LogLevel.UNKNOWN
 }

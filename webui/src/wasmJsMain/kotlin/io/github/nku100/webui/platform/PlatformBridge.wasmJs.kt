@@ -49,10 +49,6 @@ private external fun emptyJsObject(): JsAny
 @JsFun("(msg) => ksu.toast(msg)")
 private external fun ksuToastJs(message: String)
 
-// listPackages: ksu.listPackages(type) — synchronous, returns JSON string
-@JsFun("(type) => { try { return ksu.listPackages(type); } catch(e) { return '[]'; } }")
-private external fun ksuListPackagesJs(type: String): String
-
 // moduleInfo: ksu.moduleInfo() — synchronous, returns string
 @JsFun("() => ksu.moduleInfo()")
 private external fun ksuModuleInfoJs(): JsString
@@ -310,61 +306,21 @@ actual object PlatformBridge {
     }
 
     actual suspend fun listPackages(): List<PackageInfo> {
-        // Try ksu.listPackages API first (KernelSU manager)
+        val packages = RootAccess.packages()
+        val labels = mutableMapOf<String, String>()
         try {
-            val userJson = ksuListPackagesJs("user")
-            val systemJson = ksuListPackagesJs("system")
-            val userPkgs = if (userJson.isNotBlank() && userJson != "[]")
-                Json.parseToJsonElement(userJson).jsonArray.map { it.jsonPrimitive.content }
-            else emptyList()
-            val systemPkgs = if (systemJson.isNotBlank() && systemJson != "[]")
-                Json.parseToJsonElement(systemJson).jsonArray.map { it.jsonPrimitive.content }
-            else emptyList()
-
-            if (userPkgs.isNotEmpty() || systemPkgs.isNotEmpty()) {
-                val allPkgs = userPkgs + systemPkgs
-                val systemSet = systemPkgs.toSet()
-
-                // Try getPackagesInfo for labels
-                try {
-                    val infoJson = ksuGetPackagesInfoJs(Json.encodeToString(allPkgs))
-                    if (infoJson.isNotBlank() && infoJson != "[]") {
-                        val infoArray = Json.parseToJsonElement(infoJson).jsonArray
-                        return infoArray.map { element ->
-                            val obj = element.jsonObject
-                            val pkgName = obj["packageName"]?.jsonPrimitive?.content ?: ""
-                            val label = obj["appLabel"]?.jsonPrimitive?.content ?: pkgName
-                            PackageInfo(
-                                packageName = pkgName,
-                                label = label.ifBlank { pkgName },
-                                iconModel = "ksu://icon/$pkgName",
-                                isSystemApp = pkgName in systemSet,
-                            )
-                        }
-                    }
-                } catch (_: Exception) { /* getPackagesInfo not available */ }
-
-                return allPkgs.map {
-                    PackageInfo(
-                        packageName = it,
-                        iconModel = "ksu://icon/$it",
-                        isSystemApp = it in systemSet,
-                    )
-                }
+            val infoJson = ksuGetPackagesInfoJs(Json.encodeToString(packages.map { it.packageName }))
+            for (element in Json.parseToJsonElement(infoJson).jsonArray) {
+                val obj = element.jsonObject
+                val name = obj["packageName"]?.jsonPrimitive?.content ?: continue
+                val label = obj["appLabel"]?.jsonPrimitive?.content ?: continue
+                if (label.isNotBlank()) labels[name] = label
             }
-        } catch (_: Exception) { /* listPackages not available (e.g. KsuWebUIStandalone) */ }
-
-        // Fallback: use exec("pm list packages -3")
-        return try {
-            val result = exec("pm list packages -3")
-            if (result.errno != 0) return emptyList()
-            result.stdout.lines()
-                .filter { it.startsWith("package:") }
-                .map { PackageInfo(packageName = it.removePrefix("package:").trim()) }
-                .filter { it.packageName.isNotBlank() }
         } catch (_: Exception) {
-            emptyList()
+            // Some WebUI hosts cannot supply labels; the root inventory remains authoritative.
         }
+        return packages.map { it.copy(label = labels[it.packageName] ?: it.packageName,
+            iconModel = "ksu://icon/${it.packageName}") }
     }
 
     actual suspend fun readFile(path: String): String {

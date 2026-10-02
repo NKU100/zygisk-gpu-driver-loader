@@ -2,7 +2,6 @@ package io.github.nku100.webui.platform
 
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ApplicationInfo
 import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
@@ -17,6 +16,9 @@ import io.github.nku100.webui.data.DriverRepository
 import io.github.nku100.webui.data.DriverStoreException
 import io.github.nku100.webui.data.Sha256
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.ByteArrayOutputStream
@@ -24,6 +26,7 @@ import java.io.File
 import java.io.RandomAccessFile
 import java.util.zip.ZipInputStream
 import kotlin.coroutines.resume
+import java.util.concurrent.TimeUnit
 
 actual val isAndroidPlatform: Boolean = true
 
@@ -196,15 +199,25 @@ actual object PlatformBridge {
         try {
             val process = Runtime.getRuntime().exec(arrayOf("su", "-c", command))
             try {
-                val stdout = process.inputStream.bufferedReader().readText()
-                val stderr = process.errorStream.bufferedReader().readText()
-                val errno = process.waitFor()
-                ShellResult(errno, stdout, stderr)
+                coroutineScope {
+                    val stdout = async(Dispatchers.IO) { process.inputStream.bufferedReader().use { it.readText() } }
+                    val stderr = async(Dispatchers.IO) { process.errorStream.bufferedReader().use { it.readText() } }
+                    if (!process.waitFor(60, TimeUnit.SECONDS)) {
+                        process.destroyForcibly()
+                        ShellResult(-1, stdout.await(), "Root command timed out: ${stderr.await()}")
+                    } else {
+                        ShellResult(process.exitValue(), stdout.await(), stderr.await())
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 ShellResult(-1, "", e.message ?: "Unknown error")
             } finally {
                 process.destroy()
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             ShellResult(-1, "", e.message ?: "Failed to execute su")
         }
@@ -215,28 +228,16 @@ actual object PlatformBridge {
     }
 
     actual suspend fun listPackages(): List<PackageInfo> = withContext(Dispatchers.IO) {
-        val ctx = appContext
-        if (ctx != null) {
-            // Use PackageManager for label + icon
-            val pm = ctx.packageManager
-            pm.getInstalledApplications(0)
-                .map { info ->
-                    PackageInfo(
-                        packageName = info.packageName,
-                        label = info.loadLabel(pm).toString(),
-                        iconModel = info,
-                        isSystemApp = (info.flags and ApplicationInfo.FLAG_SYSTEM) != 0,
-                    )
-                }
-                .sortedBy { it.label.lowercase() }
-        } else {
-            // Fallback: shell command
-            val result = exec("pm list packages")
-            if (result.errno != 0) return@withContext emptyList()
-            result.stdout.lines()
-                .filter { it.startsWith("package:") }
-                .map { PackageInfo(packageName = it.removePrefix("package:").trim()) }
-        }
+        val packages = RootAccess.packages(userId = android.os.Process.myUid() / 100000)
+        val pm = appContext?.packageManager ?: return@withContext packages
+        packages.map { pkg ->
+            try {
+                val info = pm.getApplicationInfo(pkg.packageName, 0)
+                pkg.copy(label = info.loadLabel(pm).toString(), iconModel = info)
+            } catch (_: Exception) {
+                pkg
+            }
+        }.sortedBy { it.label.lowercase() }
     }
 
     actual suspend fun readFile(path: String): String = withContext(Dispatchers.IO) {

@@ -13,6 +13,8 @@ import io.github.nku100.webui.data.ModuleConfig
 import io.github.nku100.webui.data.PackageSettings
 import io.github.nku100.webui.platform.PackageInfo
 import io.github.nku100.webui.platform.PlatformBridge
+import io.github.nku100.webui.platform.RootAccess
+import io.github.nku100.webui.platform.RootEnvironment
 import io.github.nku100.webui.platform.awaitNextFrame
 import io.github.nku100.webui.platform.hasPlatformApi
 import io.github.nku100.webui.ui.component.SearchStatus
@@ -36,6 +38,8 @@ import kotlin.time.Duration.Companion.milliseconds
 
 @Immutable
 data class MainUiState(
+    val rootEnvironment: RootEnvironment? = null,
+    val packageListFailed: Boolean = false,
     val config: ModuleConfig = ModuleConfig(),
     val drivers: DriversUiState = DriversUiState(),
     val packages: List<PackageInfo> = emptyList(),
@@ -79,8 +83,11 @@ class MainViewModel : ViewModel() {
     }
 
     private suspend fun fetchData() {
-        _uiState.update { it.copy(isLoading = true) }
+        _uiState.update { it.copy(isLoading = true, rootEnvironment = null) }
         try {
+            val environment = RootAccess.environment()
+            _uiState.update { it.copy(rootEnvironment = environment) }
+            check(environment.available) { "Root access unavailable" }
             val config = ConfigRepository.load()
             val drivers = try {
                 DriversUiState().withVerifiedList(DriverRepository.listDrivers())
@@ -106,6 +113,7 @@ class MainViewModel : ViewModel() {
                     config = config,
                     drivers = drivers,
                     packages = packages,
+                    packageListFailed = false,
                     isLoading = false,
                     hasLoaded = true,
                     themeMode = resolveThemeMode(config),
@@ -128,6 +136,10 @@ class MainViewModel : ViewModel() {
                 it.copy(
                     isLoading = false,
                     hasLoaded = true,
+                    rootEnvironment = it.rootEnvironment ?: RootEnvironment(),
+                    packages = emptyList(),
+                    searchResults = emptyList(),
+                    packageListFailed = true,
                     drivers = if (it.drivers.listStatus == DriverListStatus.LOADING)
                         it.drivers.afterListFailure() else it.drivers,
                 )
@@ -138,20 +150,7 @@ class MainViewModel : ViewModel() {
     fun refresh(): Job = viewModelScope.launch {
         _uiState.update { it.copy(isRefreshing = true) }
         awaitNextFrame()
-        try {
-            val rawPackages = PlatformBridge.listPackages()
-            val targets = _uiState.value.config.targetPackages.toSet()
-            val packages = withContext(Dispatchers.Default) { sortPackages(rawPackages, targets) }
-            awaitNextFrame()
-            _uiState.update { it.copy(packages = packages, isRefreshing = false) }
-            // Re-apply active search with refreshed package list
-            val currentSearch = searchQuery.value
-            if (currentSearch.isNotEmpty()) {
-                applySearchText(currentSearch)
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
+        try { fetchData() } finally {
             _uiState.update { it.copy(isRefreshing = false) }
         }
     }
