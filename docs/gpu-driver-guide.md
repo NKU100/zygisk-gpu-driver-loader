@@ -87,21 +87,27 @@ APK 和 KernelSU WebUI 均已验证元数据声明 arm64-v8a、但主库实际�
 
 未选中的 DevCheck 冷启动只映射系统 Vulkan，没有模块私有驱动或 helper。通过 APK 关闭模块总开关后，配置明确为 `enabled=false` 且保留 Unity 的绑定；重启 Unity 后仅映射系统 Vulkan，场景正常渲染。横屏自动化点击曾未确认落盘，因此另行在竖屏复测关闭与重新启用：两次点击均确认配置变化，重新启用后配置哈希与测试前一致。Unity 冷启动的新进程记录 `Loaded`，映射私有 Turnip 主库和 Release hook 库，画面显示 `Turnip Adreno (TM) 750` 与正常渲染的棋盘场景。测试结束恢复了原来的自动旋转设置。
 
-这些结果不代表所有应用或驱动兼容。使用 Turnip 时，Unity 启动日志仍报告 `VK_QCOM_fragment_density_map_offset` 缺少所需 `VK_EXT_fragment_density_map` 的扩展启用验证错误，未导致此次场景停止渲染，但不能称为无验证错误或完整 VRS 功能验收。配套 APK 的完整真机流程仍需继续验证。
+已绑定驱动缺失的运行时回退也已验证。临时移开 root 管理的 Turnip 源目录、保留索引与 Unity 绑定后，冷启动进程记录 `InvalidDriver`，仅映射系统 `/vendor/lib64/hw/vulkan.adreno.so`，没有映射模块私有驱动或 hook，棋盘场景正常渲染。原样移回目录并再次冷启动后，新进程记录 `Loaded`，映射私有 Turnip，窗口显示 `Turnip Adreno (TM) 750`。配置、索引和主库哈希均与测试前一致。此测试覆盖源目录缺失，不代表任意运行中驱动故障都能恢复。
 
-## 从源码构建
+这些结果不代表所有应用或驱动兼容。使用 Turnip 时，Unity 启动日志仍报告 `VK_QCOM_fragment_density_map_offset` 缺少所需 `VK_EXT_fragment_density_map` 的扩展启用验证错误，未导致此次场景停止渲染，但不能称为无验证错误或完整 VRS 功能验收。
 
-### Magisk 模拟器验证边界
+### 异常 ZIP
 
 KernelSU 管理器正常模块入口的 WebUI 已分别选入上述路径穿越和缺库 ZIP，最终均显示无效包提示。两次检查配置与索引哈希不变，无新增驱动、暂存残留或越界标记。缺库包这次从开始处理到错误提示之间存在明显延迟：17:22:35 截图仍为“处理中”，17:23:17 已返回拒绝；此结果只确认最终拒绝和数据保留，不代表反馈延迟已解决。自动旋转设置已恢复。
 
-Redmi 配套 APK 另通过系统文件选择器验证两类小型异常 ZIP：只有元数据、缺少声明主库的包，以及含 `../GPU-Loader-traversal-marker`、元数据和 arm64 ELF 头测试主库的路径穿越包。两者均显示“驱动 ZIP 或元数据无效”，配置和驱动索引哈希保持不变，没有新增驱动或遗留暂存目录；路径穿越标记也没有生成。测试包未绑定应用、未执行，手机自动旋转设置已恢复。KernelSU WebUI 对这两类包的文件选择器流程仍需另行验证。
+再次复测 192 字节的缺库 ZIP 时，文件选择前后均通过系统窗口信息确认前台为 KernelSU `WebUIActivity`；确认选择后约 1 秒的截图已显示无效包提示，配置和索引哈希未变。此前延迟未复现，原因尚未确认；临时诊断代码已撤除，正式 WebUI 资产已恢复。
+
+Redmi 配套 APK 另通过系统文件选择器验证两类小型异常 ZIP：只有元数据、缺少声明主库的包，以及含 `../GPU-Loader-traversal-marker`、元数据和 arm64 ELF 头测试主库的路径穿越包。两者均显示“驱动 ZIP 或元数据无效”，配置和驱动索引哈希保持不变，没有新增驱动或遗留暂存目录；路径穿越标记也没有生成。测试包未绑定应用、未执行，手机自动旋转设置已恢复。
+
+### Magisk 模拟器与链接修复
 
 去除多余 Android 库依赖后，源码提交 `94790d9` 的 Release 包 `ci-186-94790d9` 已在 Redmi KernelSU 真机覆盖安装并重启复验。Unity 新进程记录 `HookInstalled` 与 `Loaded`，映射私有 `vulkan.ad07xx.so`，画面仍显示 `Turnip Adreno (TM) 750` 与棋盘场景。配置和驱动索引 SHA-256 均与安装前一致；旧模块及配置保存在设备 `validation-backup-ci186`。这确认该链接改动没有阻断已验证的 Adreno 加载路径，仍保留前述 Unity 扩展验证错误的限制。
 
 后续探针验证发现主模块多余的 `libandroid.so` 链接依赖会在该镜像的 Magisk companion namespace 中触发间接依赖加载失败。去除该链接后，重新构建并安装 `ci-185-a8ba69b` 测试包、重启，目标探针进程实际记录 `UnsupportedDevice`：KGSL 型号不可用，跳过自定义驱动并使用系统 Vulkan。探针成功创建 instance/device、提交命令、等待 fence，并回读验证 4096 字节。产物检查 `scripts/test-module-dependencies.sh <llvm-readelf> <module.so>` 确认主模块不依赖 `libandroid.so`；这项检查在修复前失败。此结果证明该 Magisk 环境的模块执行与型号缺失安全退出，不证明 Adreno 加载。
 
 现有 `ZygiskTemplateVerify` AVD 为 arm64、16 KB 页大小的 Google Play 系统镜像，运行 Magisk 31。保留模拟器数据，通过 `magisk --install-module` 安装 Release ZIP `ci-182-f30bfd7`，安装器成功校验并解压主模块及两份 helper。启用 Magisk Zygisk 设置并重启后，模块目录和版本正确；配套 APK 首页实际渲染，识别 Magisk，显示该模块版本与配置路径。此处的首页状态不证明 Zygisk 已注入目标进程，也不证明自定义驱动已加载；模拟器不是 Adreno 设备，后续仅用于平台桥接与安全退出验收。
+
+## 从源码构建
 
 ```bash
 git clone --recursive https://github.com/NKU100/zygisk-gpu-driver-loader.git

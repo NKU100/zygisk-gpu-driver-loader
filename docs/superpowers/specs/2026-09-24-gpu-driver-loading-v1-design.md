@@ -1,6 +1,6 @@
 # 按 App 加载 GPU 驱动第一阶段设计
 
-状态：Native 加载、双端 ZIP 导入反馈、测试驱动实际删除及 Release 安装重启已在 Redmi Adreno 750 验证；Magisk 环境与部分安全退出路径继续验收
+状态：Native 加载、双端 ZIP 导入反馈、测试驱动实际删除、Release 安装重启及绑定驱动缺失回退已在 Redmi Adreno 750 验证；Magisk 模拟器已验证模块执行与 KGSL 缺失安全退出，其他运行环境仍未覆盖
 
 `libadrenotools` 的公开 `adrenotools_open_libvulkan()` 接口要求 hook 目录对应目标
 App 的 `nativeLibraryDir`。本模块不调用该私有 loader 接口，而是直接复用
@@ -141,6 +141,12 @@ PPSSPP 自己从私有 loader 句柄解析 Vulkan 函数，普通目标 App 不�
 - 目标 App 需要重启后才会使用新的驱动。
 
 ## 验证
+
+绑定驱动源目录缺失时，Redmi 上的 Unity 冷启动记录 `InvalidDriver`，仅映射系统
+Adreno Vulkan 驱动且正常渲染；恢复源目录后冷启动重新记录 `Loaded`，映射私有
+Turnip 并正常渲染。测试未修改配置或索引，恢复后的主库哈希与测试前一致。
+Magisk arm64 模拟器上的模块执行与 KGSL 缺失安全退出已验证，但模拟器不能验证
+Adreno 自定义驱动加载。以下历史记录中的待验收项以使用指南的当前结果为准。
 
 最新验收已覆盖 APK 与 KernelSU WebUI 的原始 Turnip ZIP 重复导入成功反馈、
 非 ELF 主库拒绝、索引与绑定保留、暂存清理，以及 APK 中未绑定测试驱动的实际删除。
