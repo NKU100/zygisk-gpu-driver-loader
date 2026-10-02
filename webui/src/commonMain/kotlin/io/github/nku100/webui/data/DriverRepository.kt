@@ -173,6 +173,12 @@ object DriverRepository {
                 var size = 0L
                 val header = ByteArray(DriverElfHeader.SIZE)
                 var headerSize = 0
+                val writes = mutableListOf<String>()
+                suspend fun flushWrites() {
+                    if (writes.isEmpty()) return
+                    checked(writes.joinToString(" && "), execute)
+                    writes.clear()
+                }
                 streamFile(name) { base64 ->
                     val bytes = try { Base64.decode(base64) } catch (_: Exception) {
                         throw DriverStoreException(DriverArchiveError.TRANSFER_FAILED)
@@ -186,8 +192,11 @@ object DriverRepository {
                     bytes.copyInto(header, headerSize, 0, prefixSize)
                     headerSize += prefixSize
                     sourceHash.update(bytes)
-                    checked("printf '%s' ${quote(base64)} | base64 -d >> ${quote(path)}", execute)
+                    writes += "printf '%s' ${quote(base64)} | base64 -d >> ${quote(path)}"
+                    // Keep the su command below Android's per-argument size limit.
+                    if (writes.size == 3) flushWrites()
                 }
+                flushWrites()
                 if (size == 0L) throw DriverStoreException(DriverArchiveError.TRANSFER_FAILED)
                 if (name != "meta.json" && (headerSize < header.size || !DriverElfHeader.isArm64Library(header))) {
                     throw DriverStoreException(DriverArchiveError.UNSUPPORTED_ABI)
