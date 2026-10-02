@@ -148,23 +148,36 @@ object DriverRepository {
         val final = "$root/${driver.driverId}"
         try {
             checked("mkdir -p ${quote(root)} && mkdir ${quote(stage)}", execute)
-            for (name in listOf("meta.json", driver.libraryName)) {
+            val libraries = (listOf(driver.libraryName) + entries.filter {
+                it.isRegularFile && it.path.endsWith(".so")
+            }.map { it.path }).distinct()
+            var expandedSize = 0L
+            for (name in listOf("meta.json") + libraries) {
                 val path = "$stage/$name"
                 checked(": > ${quote(path)}", execute)
                 val sourceHash = Sha256()
                 var size = 0L
+                val header = ByteArray(DriverElfHeader.SIZE)
+                var headerSize = 0
                 streamFile(name) { base64 ->
                     val bytes = try { Base64.decode(base64) } catch (_: Exception) {
                         throw DriverStoreException(DriverArchiveError.TRANSFER_FAILED)
                     }
                     if (bytes.isEmpty() || bytes.size > CHUNK_SIZE) throw DriverStoreException(DriverArchiveError.TRANSFER_FAILED)
                     size += bytes.size
+                    expandedSize += bytes.size
                     if (name == "meta.json") checkMetaSize(size.toInt())
-                    if (size > MAX_ARCHIVE_BYTES) throw DriverStoreException(DriverArchiveError.INVALID_ZIP)
+                    if (expandedSize > MAX_ARCHIVE_BYTES) throw DriverStoreException(DriverArchiveError.INVALID_ZIP)
+                    val prefixSize = minOf(bytes.size, header.size - headerSize)
+                    bytes.copyInto(header, headerSize, 0, prefixSize)
+                    headerSize += prefixSize
                     sourceHash.update(bytes)
                     checked("printf '%s' ${quote(base64)} | base64 -d >> ${quote(path)}", execute)
                 }
                 if (size == 0L) throw DriverStoreException(DriverArchiveError.TRANSFER_FAILED)
+                if (name != "meta.json" && (headerSize < header.size || !DriverElfHeader.isArm64Library(header))) {
+                    throw DriverStoreException(DriverArchiveError.UNSUPPORTED_ABI)
+                }
                 val rootHash = checked("sha256sum ${quote(path)}", execute).stdout.substringBefore(' ').lowercase()
                 if (rootHash != sourceHash.hexDigest()) throw DriverStoreException(DriverArchiveError.TRANSFER_FAILED)
             }

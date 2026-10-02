@@ -40,7 +40,7 @@ object DriverArchivePolicy {
         if (normalizedLibraryPath == metadataEntry.second) {
             return DriverImportResult.Rejected(DriverArchiveError.LIBRARY_NAME_MISMATCH)
         }
-        val abi = metaJson["abi"].orEmpty()
+        val abi = metaJson["abi"]?.takeIf { it.isNotEmpty() } ?: SUPPORTED_ABI
         if (abi != SUPPORTED_ABI) {
             return DriverImportResult.Rejected(DriverArchiveError.UNSUPPORTED_ABI)
         }
@@ -58,6 +58,14 @@ object DriverArchivePolicy {
         if (!libraryEntry.first.isRegularFile) {
             return DriverImportResult.Rejected(DriverArchiveError.LIBRARY_NOT_FOUND)
         }
+        val bundledLibraries = normalizedPaths.filter { (entry, _) -> entry.isRegularFile && entry.path.endsWith(".so") }
+        if (bundledLibraries.any { (_, path) -> path.size != 1 }) {
+            return DriverImportResult.Rejected(DriverArchiveError.LIBRARY_OUTSIDE_ROOT)
+        }
+        if (bundledLibraries.map { it.second }.distinct().size != bundledLibraries.size) {
+            return DriverImportResult.Rejected(DriverArchiveError.DUPLICATE_LIBRARY_NAME)
+        }
+        if (bundledLibraries.size > 128) return DriverImportResult.Rejected(DriverArchiveError.INVALID_ZIP)
         val name = metaJson["name"]?.takeIf { it.isNotBlank() } ?: libraryName
         val driverId = stableDriverId(archiveSha256, libraryName, abi)
         return DriverImportResult.Accepted(DriverInfo(driverId, name, libraryName, abi))

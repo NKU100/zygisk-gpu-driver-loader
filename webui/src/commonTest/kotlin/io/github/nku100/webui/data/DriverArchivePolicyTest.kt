@@ -6,6 +6,12 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
 class DriverArchivePolicyTest {
+    @Test
+    fun acceptsStandardMetadataWithoutCustomAbiField() {
+        val result = DriverArchivePolicy.validate("a".repeat(64), validEntries,
+            mapOf("schemaVersion" to "1", "name" to "Turnip", "minApi" to "28", "libraryName" to "libVkDriver.so"))
+        assertEquals("arm64-v8a", assertIs<DriverImportResult.Accepted>(result).driver.abi)
+    }
     private val validEntries = listOf(
         DriverFileInfo("meta.json", isRegularFile = true),
         DriverFileInfo("libVkDriver.so", isRegularFile = true),

@@ -30,10 +30,25 @@ API 36 实测可以从 App 的私有目录加载 helper；此结论不代表其�
 ```text
 /data/adb/<moduleId>/drivers/<driverId>/
 ├── meta.json
-└── <libraryName from meta.json>
+├── <libraryName from meta.json>
+└── <optional dependency libraries>.so
 ```
 
 同时维护驱动索引，记录驱动 ID、显示名称、库名、ABI、导入时间和原始文件哈希。`meta.json` 使用 AdrenoTools 约定，至少包含 `libraryName` 字段。
+
+遵循 [AdrenoTools 包格式](https://github.com/bylaws/libadrenotools/blob/master/tools/ADPKG.md)，
+不要求额外添加 `abi` 字段。缺省按本阶段 arm64 候选处理，发布前根据实际 ELF64、
+little-endian、ET_DYN、AArch64 文件头确认 ABI；声明 arm64 不能绕过文件校验。
+保存根目录中的主库与依赖 `.so`，保持元数据和库字节不变，不重新打包，也不修改 SONAME。
+依赖是否需要不同于系统库的 SONAME 由驱动包作者按上游规范处理。
+
+导入最多 128 个库，总解压大小不超过 512 MiB；每个库均校验 ELF 头和传输哈希。
+Native companion 重新校验整组源文件的类型、属主、链接数、大小和 arm64 ELF，
+原子暂存全部库。复用缓存时核对完整文件集合和每个文件内容，多出、缺少或变更的文件
+均拒绝复用，不覆盖 App 控制的异常缓存。
+
+registry 和配置中的驱动 ID 保持原值。App 私有缓存目录对 ID 中的冒号与下划线作
+无歧义 `_XX` 编码，避免 linker 把冒号解析为 namespace 搜索路径分隔符。
 
 ZIP 导入必须先进入临时目录，再校验压缩包路径、`meta.json`、驱动库文件名和 ABI，最后以原子改名方式安装。拒绝符号链接、绝对路径和 `../` 路径，避免 ZIP 路径穿越。
 
@@ -158,6 +173,21 @@ GPU 提交和 4096 字节回读通过。WebUI 现有日志页读取此文件；�
 
 主机测试入口为 `sh scripts/test-native.sh`。安装检查为
 `sh scripts/test-module-install.sh <module-debug.zip>`，会运行包内实际安装脚本和校验。
+
+原始 ZIP 的发布器集成测试可通过以下方式显式运行；不下载文件，不写设备，只在主机
+临时目录执行发布命令并逐文件比对原始字节。未提供 ZIP 时，该测试标记为 skipped。
+
+```bash
+GPU_DRIVER_TEST_ZIPS=/absolute/driver1.zip:/absolute/driver2.zip \
+  ./gradlew :webui:testAndroidHostTest --rerun-tasks
+```
+
+2026-10-02，未修改的上游 `adreno757.adpkg.zip`（7 个文件）和
+`Turnip_v26.0.0_R8.zip`（2 个文件）通过该集成测试。真实模块进一步在上述 Redmi
+设备加载原始 Turnip 库，枚举设备名为 `Turnip Adreno (TM) 750`，完成 4096 字节
+GPU 填充和回读，`Loaded` 持久化且私有映射可见。Qualcomm 包仅验证全部 6 个库
+与元数据暂存，没有执行其 Vulkan 请求；不将其稳定性或渲染兼容性视为已验证。
+上述真机 registry 准备使用主机发布器的输出，不代表 WebUI 文件选择器已完成验收。
 
 1. 构建 arm64 Debug 模块，检查 ZIP 中包含主 Zygisk 库和两个 hook 库，不包含第三方驱动二进制。
 2. 在 WebUI 和 Android APK 各导入一个合法的 AdrenoTools ZIP，确认索引和目录内容一致。

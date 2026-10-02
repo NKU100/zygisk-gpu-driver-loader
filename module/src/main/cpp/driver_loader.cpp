@@ -5,6 +5,8 @@
 #include "companion_fd.h"
 #include "vulkan_driver_route.h"
 #include "driver_identity.h"
+#include "driver_bundle.h"
+#include "driver_cache_path.h"
 #include "adrenotools/driver.h"
 #if defined(__aarch64__)
 #include "android_linker_ns.h"
@@ -275,7 +277,7 @@ bool sameFile(int source, int directory, const std::string &name, uid_t uid, gid
 }
 
 bool stageDriver(const std::string &data, const DriverSelection &selection, uid_t uid, gid_t gid,
-                 int metadata, int library, const std::string &name, std::string &path, std::string &basePath) {
+                 int metadata, const std::vector<BundleLibrary> &libraries, std::string &path, std::string &basePath) {
     // Android may alias /data/user/0 to /data/data; resolve only the Zygisk-provided base.
     char canonical[PATH_MAX];
     if (!appDataPathAllowed(data, selection.packageName, uid)) return false;
@@ -294,40 +296,52 @@ bool stageDriver(const std::string &data, const DriverSelection &selection, uid_
     Fd module(privateDirectory(files.value, MODULE_ID, uid, gid));
     Fd parent(privateDirectory(module.value, "gpu-driver", uid, gid));
     if (parent.value < 0) return false;
-    path = base + "/files/" MODULE_ID "/gpu-driver/" + selection.driverId + "/";
-    Fd existing(openDirectory(parent.value, selection.driverId));
+    const std::string cache = driverCacheComponent(selection.driverId);
+    if (cache.empty()) return false;
+    path = base + "/files/" MODULE_ID "/gpu-driver/" + cache + "/";
+    std::vector<std::string> expectedFiles{"meta.json"};
+    for (const auto &library : libraries) expectedFiles.push_back(library.name);
+    auto matches = [&](int directory) {
+        if (!bundleCacheMatches(directory, expectedFiles)) return false;
+        if (!sameFile(metadata, directory, "meta.json", uid, gid, StagedFileKind::Metadata)) return false;
+        for (const auto &library : libraries) {
+            if (!sameFile(library.fd, directory, library.name, uid, gid, StagedFileKind::NativeLibrary)) return false;
+        }
+        return true;
+    };
+    Fd existing(openDirectory(parent.value, cache));
     if (existing.value >= 0) {
         return fstat(existing.value, &st) == 0 && st.st_uid == uid && st.st_gid == gid &&
             (st.st_mode & 07777) == 0700 &&
-            sameFile(metadata, existing.value, "meta.json", uid, gid, StagedFileKind::Metadata) &&
-            sameFile(library, existing.value, name, uid, gid, StagedFileKind::NativeLibrary);
+            matches(existing.value);
     }
     std::string temporary = ".stage-" + std::to_string(getpid());
     if (mkdirat(parent.value, temporary.c_str(), 0700)) return false;
     Fd staging(openDirectory(parent.value, temporary));
     if (staging.value < 0 || fchmod(staging.value, 0700) || fstat(staging.value, &st) ||
         st.st_uid != geteuid() || (st.st_mode & 0077)) return false;
-    bool ready = copyFile(metadata, staging.value, "meta.json", uid, gid, StagedFileKind::Metadata) &&
-        copyFile(library, staging.value, name, uid, gid, StagedFileKind::NativeLibrary) &&
-        fsync(staging.value) == 0;
+    bool ready = copyFile(metadata, staging.value, "meta.json", uid, gid, StagedFileKind::Metadata);
+    for (const auto &library : libraries) {
+        ready = ready && copyFile(library.fd, staging.value, library.name, uid, gid, StagedFileKind::NativeLibrary);
+    }
+    ready = ready && fsync(staging.value) == 0;
     if (!ready) {
         unlinkat(staging.value, "meta.json", 0);
-        unlinkat(staging.value, name.c_str(), 0);
+        for (const auto &library : libraries) unlinkat(staging.value, library.name.c_str(), 0);
         unlinkat(parent.value, temporary.c_str(), AT_REMOVEDIR);
         return false;
     }
     // Never replace an app-controlled destination or publish into a concurrently created directory.
     if (fchown(staging.value, uid, gid)) return false;
     if (syscall(SYS_renameat2, parent.value, temporary.c_str(), parent.value,
-                selection.driverId.c_str(), 1 /* RENAME_NOREPLACE */) == 0) {
-        Fd published(openDirectory(parent.value, selection.driverId));
+                cache.c_str(), 1 /* RENAME_NOREPLACE */) == 0) {
+        Fd published(openDirectory(parent.value, cache));
         struct stat actual{}, expected{};
         return published.value >= 0 && fstat(published.value, &actual) == 0 && actual.st_uid == uid &&
             actual.st_gid == gid && (actual.st_mode & 07777) == 0700 &&
             fstat(staging.value, &expected) == 0 && actual.st_dev == expected.st_dev &&
             actual.st_ino == expected.st_ino && fsync(parent.value) == 0 &&
-            sameFile(metadata, published.value, "meta.json", uid, gid, StagedFileKind::Metadata) &&
-            sameFile(library, published.value, name, uid, gid, StagedFileKind::NativeLibrary);
+            matches(published.value);
     }
     // Once app-owned, leave the temporary directory untouched on failure.
     return false;
@@ -553,10 +567,14 @@ void serveDriverPreparation(int socket) {
     }
     Fd library(openSafeFile(driver.value, name, MaxLibraryBytes));
     if (library.value < 0 || !arm64Library(library.value)) { fail("invalid arm64 driver library"); return; }
+    std::vector<BundleLibrary> libraries;
+    if (!readDriverBundle(driver.value, name, arm64Library, libraries)) {
+        fail("invalid arm64 driver bundle"); return;
+    }
     DriverSelection selection{{DriverLoadStatus::InvalidDriver, {}, {}, {}}, package, id};
     std::string data = "/data/user/" + std::to_string(uid / 100000) + "/" + package;
     std::string directory, base, hookDirectory;
-    if (!stageDriver(data, selection, uid, gid, metadata.value, library.value, name, directory, base)) {
+    if (!stageDriver(data, selection, uid, gid, metadata.value, libraries, directory, base)) {
         fail("root private driver staging failed"); return;
     }
     Fd sourceModule(openAbsoluteDirectory("/data/adb/modules/" MODULE_ID));

@@ -18,6 +18,54 @@ import kotlin.test.assertTrue
 
 class DriverRepositoryMutationTest {
     @Test
+    fun metadataCannotOverrideWrongElfArchitectureOrLibraryType() {
+        for (header in listOf(
+            arm64ElfHeader().apply { this[4] = 1 },
+            arm64ElfHeader().apply { this[5] = 2 },
+            arm64ElfHeader().apply { this[16] = 2 },
+            arm64ElfHeader().apply { this[18] = 0x3e },
+            arm64ElfHeader().copyOf(63),
+        )) {
+            val shell = InMemoryRootShell()
+            val result = completed { publish(shell, 'a', 1L, libraryBytes = header) }
+            assertEquals(DriverArchiveError.UNSUPPORTED_ABI, assertIs<DriverImportResult.Rejected>(result).error)
+            assertTrue(shell.index().isEmpty())
+        }
+    }
+    @Test
+    fun importsBundledDependencyWithoutChangingItsBytes() {
+        val shell = InMemoryRootShell()
+        val dependency = arm64ElfHeader() + byteArrayOf(7, 8, 9)
+        val result = completed { publish(shell, 'a', 1L, extraLibraries = mapOf("notgsl.so" to dependency)) }
+        val driver = assertIs<DriverImportResult.Accepted>(result).driver
+        kotlin.test.assertContentEquals(dependency, shell.files["${shell.root}/${driver.driverId}/notgsl.so"])
+    }
+
+    @Test
+    fun invalidBundledDependencyCannotPublishDriver() {
+        val shell = InMemoryRootShell()
+        val result = completed { publish(shell, 'a', 1L, extraLibraries = mapOf("notgsl.so" to byteArrayOf(1))) }
+        assertEquals(DriverArchiveError.UNSUPPORTED_ABI, assertIs<DriverImportResult.Rejected>(result).error)
+        assertTrue(shell.index().isEmpty())
+    }
+    @Test
+    fun invalidElfCannotPublishEvenWhenMetadataClaimsArm64() {
+        val shell = InMemoryRootShell()
+        val result = completed { publish(shell, 'a', 1L, libraryBytes = byteArrayOf(1, 2, 3)) }
+        assertEquals(DriverArchiveError.UNSUPPORTED_ABI, assertIs<DriverImportResult.Rejected>(result).error)
+        assertTrue(shell.index().isEmpty())
+        assertFalse(shell.directories.any { it.startsWith("${shell.root}/.stage-") })
+    }
+
+    @Test
+    fun detectsArm64FromLibraryWithNoMetadataAbi() {
+        val shell = InMemoryRootShell()
+        val result = completed { publish(shell, 'a', 1L, includeAbi = false) }
+        assertEquals("arm64-v8a", assertIs<DriverImportResult.Accepted>(result).driver.abi)
+        assertEquals(1, shell.index().size)
+    }
+
+    @Test
     fun importReReadsIndexAfterAnotherImportPublishes() {
         val shell = InMemoryRootShell()
         var resumeFirst: Continuation<Unit>? = null
@@ -140,19 +188,28 @@ class DriverRepositoryMutationTest {
         shell: InMemoryRootShell,
         suffix: Char,
         importedAt: Long,
+        libraryBytes: ByteArray = arm64ElfHeader(),
+        includeAbi: Boolean = true,
+        extraLibraries: Map<String, ByteArray> = emptyMap(),
         pause: suspend () -> Unit = {},
     ): DriverImportResult {
         val library = "lib$suffix.so"
-        val meta = """{"name":"Driver $suffix","libraryName":"$library","abi":"arm64-v8a"}"""
+        val meta = """{"name":"Driver $suffix","libraryName":"$library"${if (includeAbi) ",\"abi\":\"arm64-v8a\"" else ""}}"""
         return DriverRepository.publish(
             suffix.toString().repeat(64),
-            listOf(DriverFileInfo("meta.json", true), DriverFileInfo(library, true)),
-            mapOf("name" to "Driver $suffix", "libraryName" to library, "abi" to "arm64-v8a"),
+            listOf(DriverFileInfo("meta.json", true), DriverFileInfo(library, true)) +
+                extraLibraries.keys.map { DriverFileInfo(it, true) },
+            mapOf("name" to "Driver $suffix", "libraryName" to library) +
+                if (includeAbi) mapOf("abi" to "arm64-v8a") else emptyMap(),
             importedAt,
             execute = shell::exec,
         ) { name, append ->
             if (name == "meta.json") pause()
-            append(Base64.encode(if (name == "meta.json") meta.encodeToByteArray() else byteArrayOf(1, 2, 3)))
+            append(Base64.encode(when (name) {
+                "meta.json" -> meta.encodeToByteArray()
+                library -> libraryBytes
+                else -> extraLibraries.getValue(name)
+            }))
         }
     }
 
