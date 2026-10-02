@@ -59,7 +59,11 @@ dependency.so        # 可选，文件名由驱动包决定
 
 ## 当前验证范围
 
+源码提交 `57b73dc` 的 Release 包 `ci-191-57b73dc` 已在下述 Redmi 设备覆盖安装并重启。Unity 新进程记录 `Loaded`，映射私有 Turnip 与 Release hook，棋盘场景正常渲染；配套 APK 和 KernelSU 正常入口的 WebUI 均显示新版本。配置、驱动索引和 Turnip 主库哈希与升级前一致，旧模块与配置保存在设备数据目录的 `validation-backup-ci191`。
+
 在 Redmi 23117RK66C、Android API 36、Adreno 750、KernelSU 32601 / Zygisk Next 1.5.0 上，已验证正式模块加载用户已有的 Qualcomm 762.46 和原始 Turnip ZIP，检查了私有库映射，并通过 Vulkan 实例、设备、队列提交和 4096 字节缓冲区回读。原始多依赖 Qualcomm 757 包只验证了导入和整组暂存，没有执行其 GPU 请求。
+
+同一设备通过 `tango_translator` 运行仅包含 `armeabi-v7a` 库的独立探针 APK。为该包临时绑定已安装 Turnip 后，模块实际记录 `InvalidDriver`、原因 `unsupported ABI (requires arm64-v8a)`，未建立驱动私有目录或映射私有驱动及 helper。探针使用系统 32 位 Vulkan，完成实例创建、物理设备枚举、设备创建、队列提交、fence 等待及 4096 字节回读。测试后恢复原配置，配置与索引哈希未变。此结果覆盖该设备的 32 位翻译运行环境，不代表所有原生 32 位 zygote、x86 或 RISC-V 环境已验证。
 
 KernelSU WebUI 已完成原始 Turnip ZIP 的系统文件选择、导入、列表与详情显示、为 `com.unity.vrsdemo.vulkan` 选择驱动及配置落盘。Unity 实际启动使用私有 Turnip 库，日志报告 `Loaded`、renderer 为 `Turnip Adreno (TM) 750`、版本为 `0x06463063`，窗口显示棋盘场景与几何体。
 
