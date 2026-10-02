@@ -41,6 +41,10 @@
 #include "zygisk.hpp"
 #include "yyjson.h"
 #include "driver_loader.h"
+#include "companion_fd.h"
+#include "runtime_log.h"
+#include <mutex>
+#include <sys/syscall.h>
 
 using zygisk::Api;
 using zygisk::AppSpecializeArgs;
@@ -89,6 +93,8 @@ static constexpr off_t LOG_MAX_BYTES  = 512 * 1024;
 static constexpr off_t LOG_TRIM_BYTES = 256 * 1024;
 
 static void companion_appendLog(const std::string &line) {
+    static std::mutex logMutex;
+    std::lock_guard lock(logMutex);
     int fd = open(LOG_PATH, O_WRONLY | O_CREAT | O_APPEND, 0644);
     if (fd < 0) return;
 
@@ -141,6 +147,19 @@ static void companion_handler(int sock) {
         gpu::serveDriverFile(sock, op);
     } else if (op == gpu::PrepareDriverOpcode) {
         gpu::serveDriverPreparation(sock);
+    } else if (op == gpu::RuntimeLogOpcode) {
+        uint32_t process = 0;
+        if (!socket_transfer(sock, &process, sizeof(process), false) || process == 0 || process > INT32_MAX) return;
+        int channel = gpu::companion_fd::receiveFileReply(sock);
+        static gpu::RuntimeLogHub hub(companion_appendLog);
+        constexpr int requiredSeals = F_SEAL_SHRINK | F_SEAL_GROW | F_SEAL_SEAL;
+        int seals = channel >= 0 ? fcntl(channel, F_GET_SEALS) : -1;
+        bool accepted = channel >= 0 &&
+            seals >= 0 && (seals & requiredSeals) == requiredSeals &&
+            hub.add(channel, static_cast<pid_t>(process));
+        if (channel >= 0) close(channel);
+        uint8_t reply = accepted ? 1 : 0;
+        socket_transfer(sock, &reply, sizeof(reply), true);
     } else if (op == OP_WRITE_LOG) {
         uint32_t len = 0;
         if (!socket_transfer(sock, &len, sizeof(len), false) || len == 0 || len > 65536) return;
@@ -169,7 +188,10 @@ static char levelChar(int prio) {
  * Build a logcat-time-format line and send it to the companion for writing.
  * Also calls __android_log_print so logcat still works normally.
  */
-static void remoteLog(Api *api, int prio, const char *tag, const char *msg) {
+static gpu::RuntimeLogSender runtimeLogSender;
+static std::string runtimeProcess;
+
+static std::string logLine(int prio, const char *tag, const char *msg) {
     // Always log to logcat (works fine from app context)
     __android_log_print(prio, tag, "%s", msg);
 
@@ -187,18 +209,30 @@ static void remoteLog(Api *api, int prio, const char *tag, const char *msg) {
         tm.tm_hour, tm.tm_min, tm.tm_sec, ms,
         (int)getpid(), (int)gettid(),
         levelChar(prio), tag, msg);
-    if (len <= 0) return;
+    if (len <= 0) return {};
     len = std::min(len, static_cast<int>(sizeof(line) - 1));
+    return std::string(line, len);
+}
+
+static void runtimeLog(int prio, const char *message) {
+    std::string identified = "process=" + runtimeProcess + " " + message;
+    if (!runtimeLogSender.send(logLine(prio, LOG_TAG, identified.c_str())))
+        __android_log_print(ANDROID_LOG_WARN, LOG_TAG, "runtime log queue unavailable or full");
+}
+
+static void remoteLog(Api *api, int prio, const char *tag, const char *msg) {
+    std::string line = logLine(prio, tag, msg);
+    if (line.empty()) return;
 
     // Send to companion (root) via IPC
     int sock = api->connectCompanion();
     if (sock < 0) return;
 
     uint8_t op = OP_WRITE_LOG;
-    uint32_t msgLen = (uint32_t)len;
+    uint32_t msgLen = static_cast<uint32_t>(line.size());
     socket_transfer(sock, &op, 1, true);
     socket_transfer(sock, &msgLen, sizeof(msgLen), true);
-    socket_transfer(sock, line, (size_t)len, true);
+    socket_transfer(sock, line.data(), line.size(), true);
     close(sock);
 }
 
@@ -247,8 +281,7 @@ public:
         if (!installed) {
             diagnostic += "; fallback to system driver";
         }
-        remoteLog(api, installed ? ANDROID_LOG_INFO : ANDROID_LOG_WARN,
-                 LOG_TAG, diagnostic.c_str());
+        runtimeLog(installed ? ANDROID_LOG_INFO : ANDROID_LOG_WARN, diagnostic.c_str());
     }
 
     void preServerSpecialize(ServerSpecializeArgs *args) override {
@@ -302,6 +335,7 @@ private:
             break;
         }
         case gpu::DriverLifecycleAction::KeepModuleLibrary:
+            prepareRuntimeLog();
             break;
         }
         if (!targeted) {
@@ -351,6 +385,34 @@ private:
         }
 
         yyjson_doc_free(doc);
+    }
+
+    void prepareRuntimeLog() {
+        runtimeProcess = processName;
+        gpu::setRuntimeLogSink(runtimeLog);
+        int sock = api->connectCompanion();
+        if (sock < 0) return;
+        int channel = static_cast<int>(syscall(__NR_memfd_create, "gpu-runtime-log", 3));
+        if (channel < 0 || ftruncate(channel, sizeof(gpu::RuntimeLogQueue)) != 0 ||
+            !runtimeLogSender.initialize(channel) ||
+            fcntl(channel, F_ADD_SEALS, F_SEAL_SHRINK | F_SEAL_GROW | F_SEAL_SEAL) != 0) {
+            if (channel >= 0) close(channel);
+            close(sock);
+            return;
+        }
+        timeval timeout{2, 0};
+        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+        setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+        uint8_t opcode = gpu::RuntimeLogOpcode, accepted = 0;
+        uint32_t process = static_cast<uint32_t>(getpid());
+        bool connected = socket_transfer(sock, &opcode, sizeof(opcode), true) &&
+            socket_transfer(sock, &process, sizeof(process), true) &&
+            gpu::companion_fd::sendFileReply(sock, channel) &&
+            socket_transfer(sock, &accepted, sizeof(accepted), false) && accepted == 1;
+        __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG,
+            "runtime log queue connected=%d", connected);
+        close(channel);
+        close(sock);
     }
 };
 

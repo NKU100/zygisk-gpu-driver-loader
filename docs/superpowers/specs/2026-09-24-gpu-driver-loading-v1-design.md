@@ -141,7 +141,20 @@ KernelSU 32601 / Zygisk Next 1.5.0 上通过以下验证。设备保持首次解
 
 该驱动仍使用设备的 vendor 支持库，不代表完整替换 Qualcomm 全套库。此验收不证明
 图形 pipeline、swapchain、窗口渲染或性能；真实 App 渲染与 WebUI 本地 ZIP 导入仍需
-继续验证。运行时 driver request 状态目前在 logcat；持久化到 WebUI 日志尚需完善。
+继续验证。
+
+运行时日志在 pre-specialize 建立固定大小 memfd 共享队列，由 root companion 映射；
+完成尺寸密封和映射后关闭两端 FD。目标进程在 post-specialize 及实际 driver request
+回调中写入队列，不再调用仅在 pre-specialize 可用的 `connectCompanion()`，也不依赖
+当前设备返回 false 的 `exemptFd()`。每条日志最多 4096 字节，每进程队列 8 条；队列
+满或发送竞争时丢弃记录，保留 logcat，不阻塞 App。队列归属于建立它的进程；App
+自行 fork 的子进程不复用父队列，也不标记父队列关闭，只保留 logcat 输出。
+
+companion 最多管理 128 个队列，使用一个接收线程，进程退出后回收映射，无活跃
+队列时休眠。memfd 必须为无目录链接、尺寸匹配的普通文件，并具有 grow/shrink/seal
+密封，避免 root 映射后被截断。接收内容只写入既有 `module.log`，不提供文件路径或
+命令接口。该设备已验证 `HookInstalled`、`Loaded` 与 `SystemFallback` 持久化，同时
+GPU 提交和 4096 字节回读通过。WebUI 现有日志页读取此文件；页面呈现仍需实机验证。
 
 主机测试入口为 `sh scripts/test-native.sh`。安装检查为
 `sh scripts/test-module-install.sh <module-debug.zip>`，会运行包内实际安装脚本和校验。

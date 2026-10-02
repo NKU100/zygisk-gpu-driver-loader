@@ -11,6 +11,8 @@ c++ -std=c++20 "$tests/driver_device_eligibility_test.cpp" -o "$native_test_dir/
 "$native_test_dir/eligibility"
 c++ -std=c++20 -pthread "$tests/companion_fd_transfer_test.cpp" module/src/main/cpp/companion_fd.cpp -o "$native_test_dir/companion"
 "$native_test_dir/companion"
+c++ -std=c++20 -pthread "$tests/runtime_log_test.cpp" -o "$native_test_dir/runtime-log"
+"$native_test_dir/runtime-log"
 c++ -std=c++20 "$tests/vulkan_driver_route_test.cpp" -o "$native_test_dir/route"
 "$native_test_dir/route"
 c++ -shared -fPIC "$tests/hal_identity_fixture.cpp" -o "$native_test_dir/custom.so"

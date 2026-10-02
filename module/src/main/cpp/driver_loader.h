@@ -9,6 +9,7 @@
 namespace zygisk { struct Api; }
 
 namespace gpu {
+void setRuntimeLogSink(void (*sink)(int, const char *));
 
 enum class DriverLoadStatus {
     NotTargeted, NoBinding, UnsupportedDevice, InvalidDriver, HookPathUnavailable, AdrenotoolsFailed,

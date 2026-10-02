@@ -36,6 +36,8 @@ extern "C" void gpu_initialize_linker_symbols();
 #endif
 
 namespace gpu {
+static void (*runtimeLogSink)(int, const char *) = nullptr;
+void setRuntimeLogSink(void (*sink)(int, const char *)) { runtimeLogSink = sink; }
 namespace {
 constexpr off_t MaxLibraryBytes = 512 * 1024 * 1024;
 constexpr size_t MaxMetadataBytes = 64 * 1024;
@@ -55,9 +57,12 @@ void *loadSphalLibrary(const char *filename, int flags) {
         [](const char *name, int mode) -> void * {
             return originalLoadSphalLibrary ? originalLoadSphalLibrary(name, mode) : nullptr;
         }, identifyDriver);
-    __android_log_print(routed.status == DriverLoadStatus::Loaded ? ANDROID_LOG_INFO : ANDROID_LOG_WARN,
-        "ZygiskWebUI", "driver request=%s status=%s selectedPath=%s handle=%p",
+    const int priority = routed.status == DriverLoadStatus::Loaded ? ANDROID_LOG_INFO : ANDROID_LOG_WARN;
+    char message[2048];
+    snprintf(message, sizeof(message), "driver request=%s status=%s selectedPath=%s handle=%p",
         filename ? filename : "<null>", statusName(routed.status), selectedDriverPath.c_str(), routed.handle);
+    if (runtimeLogSink) runtimeLogSink(priority, message);
+    else __android_log_print(priority, "ZygiskWebUI", "%s", message);
     return routed.handle;
 }
 #endif
