@@ -93,6 +93,8 @@ APK 和 KernelSU WebUI 均已验证元数据声明 arm64-v8a、但主库实际�
 
 ### Magisk 模拟器验证边界
 
+Redmi 配套 APK 另通过系统文件选择器验证两类小型异常 ZIP：只有元数据、缺少声明主库的包，以及含 `../GPU-Loader-traversal-marker`、元数据和 arm64 ELF 头测试主库的路径穿越包。两者均显示“驱动 ZIP 或元数据无效”，配置和驱动索引哈希保持不变，没有新增驱动或遗留暂存目录；路径穿越标记也没有生成。测试包未绑定应用、未执行，手机自动旋转设置已恢复。KernelSU WebUI 对这两类包的文件选择器流程仍需另行验证。
+
 去除多余 Android 库依赖后，源码提交 `94790d9` 的 Release 包 `ci-186-94790d9` 已在 Redmi KernelSU 真机覆盖安装并重启复验。Unity 新进程记录 `HookInstalled` 与 `Loaded`，映射私有 `vulkan.ad07xx.so`，画面仍显示 `Turnip Adreno (TM) 750` 与棋盘场景。配置和驱动索引 SHA-256 均与安装前一致；旧模块及配置保存在设备 `validation-backup-ci186`。这确认该链接改动没有阻断已验证的 Adreno 加载路径，仍保留前述 Unity 扩展验证错误的限制。
 
 后续探针验证发现主模块多余的 `libandroid.so` 链接依赖会在该镜像的 Magisk companion namespace 中触发间接依赖加载失败。去除该链接后，重新构建并安装 `ci-185-a8ba69b` 测试包、重启，目标探针进程实际记录 `UnsupportedDevice`：KGSL 型号不可用，跳过自定义驱动并使用系统 Vulkan。探针成功创建 instance/device、提交命令、等待 fence，并回读验证 4096 字节。产物检查 `scripts/test-module-dependencies.sh <llvm-readelf> <module.so>` 确认主模块不依赖 `libandroid.so`；这项检查在修复前失败。此结果证明该 Magisk 环境的模块执行与型号缺失安全退出，不证明 Adreno 加载。
