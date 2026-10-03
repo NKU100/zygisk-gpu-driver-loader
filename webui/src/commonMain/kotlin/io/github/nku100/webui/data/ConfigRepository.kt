@@ -40,7 +40,7 @@ object ConfigRepository {
                 checked(": > ${quote(temporary)}")
                 val bytes = json.encodeToString(ModuleConfig.serializer(), config).encodeToByteArray()
                 var offset = 0
-                DriverRepository.transfer(
+                RootFileTransfer.transfer(
                     read = { buffer ->
                         if (offset == bytes.size) -1 else {
                             val count = minOf(buffer.size, bytes.size - offset)

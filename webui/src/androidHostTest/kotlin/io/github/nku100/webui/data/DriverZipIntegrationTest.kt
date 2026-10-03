@@ -19,21 +19,26 @@ class DriverZipIntegrationTest {
         val target = File(sandbox, "drivers").apply { mkdir() }
         val index = File(target, "index.json").apply { writeText("[]") }
         val root = "/data/adb/${ModuleInfo.MODULE_ID}/drivers"
+        val stageName = ".stage-aabbccdd"
+        val stage = File(target, stageName).apply { mkdir() }
+        val meta = "{\"libraryName\":\"libtest.so\",\"abi\":\"arm64-v8a\"}".encodeToByteArray()
+        val library = arm64ElfHeader()
+        File(stage, "meta.json").writeBytes(meta)
+        File(stage, "libtest.so").writeBytes(library)
         try {
             val execute: RootCommand = { command ->
-                val injected = if (command.contains("base64 -d") && command.contains("libtest.so"))
+                val injected = if (command.contains("sha256sum") && command.contains("libtest.so"))
                     "$command; exit 9" else command
                 val process = ProcessBuilder("/bin/sh", "-c", injected.replace(root, target.absolutePath))
                     .redirectErrorStream(true).start()
                 val output = process.inputStream.bufferedReader().readText()
                 ShellResult(process.waitFor(), output, "")
             }
-            val result = DriverRepository.publish("b".repeat(64),
+            val prepared = DriverPreparedImport("b".repeat(64),
                 listOf(DriverFileInfo("meta.json", true), DriverFileInfo("libtest.so", true)),
-                mapOf("libraryName" to "libtest.so", "abi" to "arm64-v8a"), 1L, execute) { name, append ->
-                val bytes = if (name == "meta.json") "{}".encodeToByteArray() else ByteArray(12288)
-                append(kotlin.io.encoding.Base64.encode(bytes))
-            }
+                DriverRepository.parseMeta(meta.decodeToString()),
+                mapOf("meta.json" to Sha256.digestHex(meta), "libtest.so" to Sha256.digestHex(library)), stageName)
+            val result = DriverRepository.publishPrepared(prepared, 1L, execute)
             assertEquals(DriverArchiveError.STORAGE_ERROR, assertIs<DriverImportResult.Rejected>(result).error)
             assertEquals("[]", index.readText())
             assertEquals(listOf("index.json"), target.listFiles()!!.map { it.name })
@@ -54,32 +59,27 @@ class DriverZipIntegrationTest {
         byteArrayOf(1, 0, 0, 0).copyInto(library, 20)
         library[52] = 64; library[53] = 0
         val meta = "{\"libraryName\":\"libtest.so\",\"abi\":\"arm64-v8a\"}".encodeToByteArray()
-        var libraryWrites = 0
+        val stageName = ".stage-11223344"
+        val stage = File(target, stageName).apply { mkdirs() }
+        File(stage, "meta.json").writeBytes(meta)
+        File(stage, "libtest.so").writeBytes(library)
+        val commands = mutableListOf<String>()
         try {
             val execute: RootCommand = { command ->
-                if (command.contains("base64 -d") && command.contains("libtest.so")) libraryWrites++
+                commands += command
                 val process = ProcessBuilder("/bin/sh", "-c", command.replace(root, target.absolutePath))
                     .redirectErrorStream(true).start()
                 val output = process.inputStream.bufferedReader().readText()
                 ShellResult(process.waitFor(), output, "")
             }
-            val result = DriverRepository.publish("a".repeat(64),
+            val prepared = DriverPreparedImport("a".repeat(64),
                 listOf(DriverFileInfo("meta.json", true), DriverFileInfo("libtest.so", true)),
-                DriverRepository.parseMeta(meta.decodeToString()), 1L, execute) { name, append ->
-                val bytes = if (name == "meta.json") meta else library
-                var offset = 0
-                DriverRepository.transfer({ buffer ->
-                    if (offset == bytes.size) -1 else {
-                        val count = minOf(buffer.size, bytes.size - offset)
-                        bytes.copyInto(buffer, 0, offset, offset + count)
-                        offset += count
-                        count
-                    }
-                }, append)
-            }
+                DriverRepository.parseMeta(meta.decodeToString()),
+                mapOf("meta.json" to Sha256.digestHex(meta), "libtest.so" to Sha256.digestHex(library)), stageName)
+            val result = DriverRepository.publishPrepared(prepared, 1L, execute)
             val accepted = assertIs<DriverImportResult.Accepted>(result)
             assertContentEquals(library, File(target, "${accepted.driver.driverId}/libtest.so").readBytes())
-            assertEquals(5, libraryWrites)
+            assertEquals(0, commands.count { it.contains("base64 -d") && it.contains(".stage-") })
         } finally {
             sandbox.deleteRecursively()
         }
@@ -104,11 +104,16 @@ class DriverZipIntegrationTest {
                 val entries = zip.entries().asSequence().map { DriverFileInfo(it.name, !it.isDirectory) }.toList()
                 val metadata = DriverRepository.parseMeta(zip.getInputStream(zip.getEntry("meta.json")).bufferedReader().readText())
                 val hash = Sha256.digestHex(archive.readBytes())
-                val result = DriverRepository.publish(hash, entries, metadata, 1L, execute) { name, append ->
-                    zip.getInputStream(zip.getEntry(name)).use { input ->
-                        DriverRepository.transfer(input::read, append)
-                    }
+                val stageName = ".stage-${hash.take(32)}"
+                val stage = File(target, stageName).apply { mkdirs() }
+                val stagedFiles = entries.filter { it.isRegularFile && (it.path == "meta.json" || it.path.endsWith(".so")) }.associate { entry ->
+                    val bytes = zip.getInputStream(zip.getEntry(entry.path)).use { it.readBytes() }
+                    File(stage, entry.path).writeBytes(bytes)
+                    entry.path to bytes
                 }
+                val prepared = DriverPreparedImport(hash, entries, metadata,
+                    stagedFiles.mapValues { Sha256.digestHex(it.value) }, stageName)
+                val result = DriverRepository.publishPrepared(prepared, 1L, execute)
                 val accepted = assertIs<DriverImportResult.Accepted>(result)
                 assertEquals("arm64-v8a", accepted.driver.abi)
                 val published = File(target, accepted.driver.driverId)

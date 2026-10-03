@@ -14,9 +14,13 @@ object DriverArchivePolicy {
             return DriverImportResult.Rejected(DriverArchiveError.INVALID_ARCHIVE_HASH)
         }
         val normalizedPaths = mutableListOf<Pair<DriverFileInfo, List<String>>>()
+        val seenPaths = mutableSetOf<List<String>>()
         for (entry in entries) {
             val path = normalizeRelativePath(entry.path)
                 ?: return DriverImportResult.Rejected(DriverArchiveError.INVALID_ENTRY_PATH)
+            if (!seenPaths.add(path)) {
+                return DriverImportResult.Rejected(DriverArchiveError.INVALID_ENTRY_PATH)
+            }
             if (entry.isSymbolicLink) {
                 return DriverImportResult.Rejected(DriverArchiveError.SYMBOLIC_LINK)
             }

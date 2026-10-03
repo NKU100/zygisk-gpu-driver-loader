@@ -3,12 +3,15 @@ package io.github.nku100.webui.data
 import io.github.nku100.webui.ModuleInfo
 import io.github.nku100.webui.platform.PlatformBridge
 import io.github.nku100.webui.platform.ShellResult
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.io.encoding.Base64
 import kotlin.random.Random
+import kotlin.coroutines.cancellation.CancellationException
 
 @Serializable
 data class DriverRecord(
@@ -29,16 +32,336 @@ internal typealias RootCommand = suspend (String) -> ShellResult
 
 /** Root-owned driver registry. Only completed directories referenced by index.json are visible. */
 object DriverRepository {
-    const val CHUNK_SIZE = 12 * 1024
     private const val MAX_ARCHIVE_BYTES = 512L * 1024 * 1024
-    private const val MAX_META_BYTES = 64 * 1024
     private val json = Json { ignoreUnknownKeys = true }
     private val root = "/data/adb/${ModuleInfo.MODULE_ID}/drivers"
     private val indexPath = "$root/index.json"
     private val idPattern = Regex("[0-9a-f]{64}:arm64-v8a:[0-9a-f]+")
     private val libraryPattern = Regex("[^/\\\\\u0000]+")
+    private const val IMPORT_PROTOCOL = "DRIVER_IMPORT_V1"
+    private const val HELPER_CLASS = "io.github.nku100.gpudriver.importer.DriverPathHelper"
 
-    suspend fun importDriverZip(): DriverImportResult = PlatformBridge.importDriverZip()
+    suspend fun listZipDirectory(path: String): DriverDirectory =
+        listZipDirectory(path, PlatformBridge::execDriverImport)
+
+    internal suspend fun listZipDirectory(path: String, execute: RootCommand): DriverDirectory {
+        val result = execute(helperCommand("list", path))
+        if (result.errno != 0 && result.stdout.isBlank()) throw DriverPathException(DriverPathError.STORAGE_ERROR)
+        return parseDirectoryProtocol(path, result.stdout)
+    }
+
+    suspend fun importDriverZip(path: String): DriverImportResult =
+        importDriverZip(path, PlatformBridge.currentTimeMillis(), PlatformBridge::execDriverImport)
+
+    internal suspend fun importDriverZip(
+        path: String,
+        importedAtEpochMillis: Long,
+        execute: RootCommand,
+    ): DriverImportResult {
+        val operationNonce = nonce()
+        val stageName = ".stage-$operationNonce"
+        val snapshot = "$root/.snapshot-$operationNonce.zip"
+        val stage = "$root/$stageName"
+        var helperStarted = false
+        try {
+            val available = execute(
+                "test ! -e ${quote(snapshot)} && test ! -L ${quote(snapshot)} && " +
+                    "test ! -e ${quote(stage)} && test ! -L ${quote(stage)}",
+            )
+            if (available.errno != 0) return DriverImportResult.Rejected(DriverArchiveError.STORAGE_ERROR)
+            helperStarted = true
+            val result = execute(helperCommand("prepare", path, root, operationNonce))
+            if (result.errno != 0 && result.stdout.isBlank()) {
+                return DriverImportResult.Rejected(DriverArchiveError.STORAGE_ERROR)
+            }
+            val prepared = parsePreparedProtocol(result.stdout)
+            if (result.errno != 0 || prepared.stageName != stageName) {
+                throw DriverStoreException(DriverArchiveError.INVALID_ZIP)
+            }
+            return publishPrepared(prepared, importedAtEpochMillis, execute)
+        } catch (error: DriverStoreException) {
+            return DriverImportResult.Rejected(error.code)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            return DriverImportResult.Rejected(DriverArchiveError.STORAGE_ERROR)
+        } finally {
+            if (helperStarted) {
+                withContext(NonCancellable) {
+                    runCatching { execute("if [ -e ${quote(snapshot)} ] || [ -L ${quote(snapshot)} ]; then rm -f ${quote(snapshot)}; fi") }
+                    runCatching { execute("if [ -e ${quote(stage)} ] || [ -L ${quote(stage)} ]; then rm -rf ${quote(stage)}; fi") }
+                }
+            }
+        }
+    }
+
+    internal suspend fun publishPrepared(
+        prepared: DriverPreparedImport,
+        importedAtEpochMillis: Long,
+        execute: RootCommand = PlatformBridge::exec,
+    ): DriverImportResult {
+        if (!Regex("\\.stage-[0-9a-f]{1,64}").matches(prepared.stageName)) {
+            return DriverImportResult.Rejected(DriverArchiveError.INVALID_ZIP)
+        }
+        val stage = "$root/${prepared.stageName}"
+        try {
+            if (!Regex("[0-9a-f]{64}").matches(prepared.archiveSha256)) {
+                throw DriverStoreException(DriverArchiveError.INVALID_ARCHIVE_HASH)
+            }
+            val validation = DriverArchivePolicy.validate(prepared.archiveSha256, prepared.entries, prepared.metaJson)
+            if (validation !is DriverImportResult.Accepted) return validation
+            val driver = validation.driver
+            if (!idPattern.matches(driver.driverId) || driver.driverId.length > 240 ||
+                !libraryPattern.matches(driver.libraryName)) {
+                throw DriverStoreException(DriverArchiveError.INVALID_ENTRY_PATH)
+            }
+            val expectedFiles = prepared.entries.filter {
+                it.isRegularFile && (it.path == "meta.json" || it.path.endsWith(".so"))
+            }.map { it.path }.toSet()
+            if (prepared.fileHashes.keys != expectedFiles || prepared.fileHashes.values.any {
+                    !Regex("[0-9a-f]{64}").matches(it)
+                }) {
+                throw DriverStoreException(DriverArchiveError.INVALID_ZIP)
+            }
+            val final = "$root/${driver.driverId}"
+            checked("test -d ${quote(stage)} && test ! -L ${quote(stage)}", execute)
+            if (parseMeta(checked("cat ${quote("$stage/meta.json")}", execute).stdout) != prepared.metaJson) {
+                throw DriverStoreException(DriverArchiveError.INVALID_META_JSON_ENTRY)
+            }
+            for ((name, expectedHash) in prepared.fileHashes) {
+                val path = "$stage/$name"
+                checked("test -f ${quote(path)} && test ! -L ${quote(path)}", execute)
+                if (name.endsWith(".so")) {
+                    val header = parseHexBytes(checked("od -An -v -t x1 -N ${DriverElfHeader.SIZE} ${quote(path)}", execute).stdout)
+                    if (!DriverElfHeader.isArm64Library(header)) {
+                        throw DriverStoreException(DriverArchiveError.UNSUPPORTED_ABI)
+                    }
+                }
+                val actualHash = checked("sha256sum ${quote(path)}", execute).stdout.substringBefore(' ').lowercase()
+                if (!Regex("[0-9a-f]{64}").matches(actualHash) || actualHash != expectedHash) {
+                    throw DriverStoreException(DriverArchiveError.TRANSFER_FAILED)
+                }
+            }
+            return RepositoryMutationGuard.mutate {
+                val latest = readIndex(execute)
+                val existing = latest.firstOrNull { it.driverId == driver.driverId }
+                if (existing != null) {
+                    for ((name, expectedHash) in prepared.fileHashes) {
+                        val installedHash = checked("sha256sum ${quote("$final/$name")}", execute)
+                            .stdout.substringBefore(' ').lowercase()
+                        if (installedHash != expectedHash) throw DriverStoreException(DriverArchiveError.STORAGE_ERROR)
+                    }
+                    return@mutate DriverImportResult.Accepted(existing.info())
+                }
+                val occupied = execute("test -e ${quote(final)} || test -L ${quote(final)}")
+                if (occupied.errno == 0) throw DriverStoreException(DriverArchiveError.STORAGE_ERROR)
+                val record = DriverRecord(driver.driverId, driver.name, driver.libraryName, driver.abi,
+                    importedAtEpochMillis, prepared.archiveSha256.lowercase())
+                val preparedIndex = prepareIndex(latest + record, execute)
+                var published = false
+                try {
+                    checked("if [ -e ${quote(final)} ] || [ -L ${quote(final)} ]; then exit 17; fi; mv ${quote(stage)} ${quote(final)}", execute)
+                    published = true
+                    checked("mv ${quote(preparedIndex)} ${quote(indexPath)}", execute)
+                    DriverImportResult.Accepted(record.info())
+                } catch (error: Exception) {
+                    if (published) execute("rm -rf ${quote(final)}")
+                    throw error
+                } finally {
+                    execute("rm -f ${quote(preparedIndex)}")
+                }
+            }
+        } catch (error: DriverStoreException) {
+            return DriverImportResult.Rejected(error.code)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            return DriverImportResult.Rejected(DriverArchiveError.STORAGE_ERROR)
+        } finally {
+            withContext(NonCancellable) {
+                runCatching { execute("if [ -e ${quote(stage)} ] || [ -L ${quote(stage)} ]; then rm -rf ${quote(stage)}; fi") }
+            }
+        }
+    }
+
+    internal fun parseDirectoryProtocol(path: String, output: String): DriverDirectory {
+        return try {
+            val lines = protocolLines(output)
+            helperErrorCode(lines.firstOrNull())?.let { throw DriverPathException(pathError(it)) }
+            if (lines.firstOrNull() != "$IMPORT_PROTOCOL\tOK\tLIST") {
+                throw DriverPathException(DriverPathError.STORAGE_ERROR)
+            }
+            val entries = lines.drop(1).map { line ->
+                val fields = line.split('\t')
+                if (fields.size != 2) throw DriverPathException(DriverPathError.STORAGE_ERROR)
+                val name = decodeProtocolText(fields[1])
+                if (!isSafePathEntryName(name)) throw DriverPathException(DriverPathError.STORAGE_ERROR)
+                val isDirectory = when (fields[0]) {
+                    "DIR" -> true
+                    "ZIP" -> false
+                    else -> throw DriverPathException(DriverPathError.STORAGE_ERROR)
+                }
+                if (!isDirectory && !name.endsWith(".zip", ignoreCase = true)) {
+                    throw DriverPathException(DriverPathError.STORAGE_ERROR)
+                }
+                DriverPathEntry(name, isDirectory)
+            }
+            DriverDirectory(path, entries)
+        } catch (error: DriverPathException) {
+            throw error
+        } catch (_: Exception) {
+            throw DriverPathException(DriverPathError.STORAGE_ERROR)
+        }
+    }
+
+    internal fun parsePreparedProtocol(output: String): DriverPreparedImport {
+        val lines = protocolLines(output)
+        helperErrorCode(lines.firstOrNull())?.let { throw DriverStoreException(archiveError(it)) }
+        if (lines.firstOrNull() != "$IMPORT_PROTOCOL\tOK\tPREPARE") {
+            throw DriverStoreException(DriverArchiveError.INVALID_ZIP)
+        }
+        var archiveHash: String? = null
+        var metaJson: Map<String, String>? = null
+        var stageName: String? = null
+        val entries = mutableListOf<DriverFileInfo>()
+        val fileHashes = linkedMapOf<String, String>()
+        val seenEntries = mutableSetOf<String>()
+        for ((index, line) in lines.drop(1).withIndex()) {
+            val fields = line.split('\t')
+            when (fields.firstOrNull()) {
+                "ARCHIVE" -> {
+                    if (fields.size != 2 || archiveHash != null || index != 0 ||
+                        !Regex("[0-9a-f]{64}").matches(fields[1])) {
+                        throw DriverStoreException(DriverArchiveError.INVALID_ZIP)
+                    }
+                    archiveHash = fields[1]
+                }
+                "META" -> {
+                    if (fields.size != 2 || metaJson != null || archiveHash == null || entries.isNotEmpty()) {
+                        throw DriverStoreException(DriverArchiveError.INVALID_ZIP)
+                    }
+                    metaJson = try {
+                        parseMeta(decodeProtocolText(fields[1]))
+                    } catch (error: DriverStoreException) {
+                        throw error
+                    } catch (_: Exception) {
+                        throw DriverStoreException(DriverArchiveError.INVALID_META_JSON_ENTRY)
+                    }
+                }
+                "ENTRY" -> {
+                    if (fields.size != 4 || archiveHash == null || fileHashes.isNotEmpty() || stageName != null) {
+                        throw DriverStoreException(DriverArchiveError.INVALID_ZIP)
+                    }
+                    val path = decodeProtocolText(fields[1])
+                    if (!seenEntries.add(path)) throw DriverStoreException(DriverArchiveError.INVALID_ENTRY_PATH)
+                    val regular = parseProtocolFlag(fields[2])
+                    val symlink = parseProtocolFlag(fields[3])
+                    entries += DriverFileInfo(path, regular, symlink)
+                }
+                "FILE" -> {
+                    if (fields.size != 4 || archiveHash == null || stageName != null) {
+                        throw DriverStoreException(DriverArchiveError.INVALID_ZIP)
+                    }
+                    val name = decodeProtocolText(fields[1])
+                    val size = fields[2].toLongOrNull()
+                    val hash = fields[3]
+                    if (!seenEntries.contains(name) || size == null || size <= 0 ||
+                        size > MAX_ARCHIVE_BYTES || !Regex("[0-9a-f]{64}").matches(hash) ||
+                        fileHashes.put(name, hash) != null) {
+                        throw DriverStoreException(DriverArchiveError.INVALID_ZIP)
+                    }
+                }
+                "STAGE" -> {
+                    if (fields.size != 2 || stageName != null || index != lines.size - 2 ||
+                        !Regex("\\.stage-[0-9a-f]{1,64}").matches(fields[1])) {
+                        throw DriverStoreException(DriverArchiveError.INVALID_ZIP)
+                    }
+                    stageName = fields[1]
+                }
+                else -> throw DriverStoreException(DriverArchiveError.INVALID_ZIP)
+            }
+        }
+        return DriverPreparedImport(
+            archiveSha256 = archiveHash ?: throw DriverStoreException(DriverArchiveError.INVALID_ZIP),
+            entries = entries,
+            metaJson = metaJson ?: emptyMap(),
+            fileHashes = fileHashes,
+            stageName = stageName ?: throw DriverStoreException(DriverArchiveError.INVALID_ZIP),
+        )
+    }
+
+    private fun protocolLines(output: String): List<String> {
+        if (output.isEmpty() || !output.endsWith('\n') || '\r' in output) {
+            throw DriverStoreException(DriverArchiveError.INVALID_ZIP)
+        }
+        val body = output.removeSuffix("\n")
+        if (body.isEmpty()) throw DriverStoreException(DriverArchiveError.INVALID_ZIP)
+        return body.split('\n').also { lines ->
+            if (lines.any { it.isEmpty() }) throw DriverStoreException(DriverArchiveError.INVALID_ZIP)
+        }
+    }
+
+    private fun helperErrorCode(line: String?): String? {
+        val fields = line?.split('\t') ?: return null
+        if (fields.size == 3 && fields[0] == IMPORT_PROTOCOL && fields[1] == "ERROR" &&
+            fields[2].matches(Regex("[A-Z_]+"))) return fields[2]
+        return null
+    }
+
+    private fun pathError(code: String): DriverPathError = when (code) {
+        "INVALID_PATH" -> DriverPathError.INVALID_PATH
+        "ACCESS_DENIED" -> DriverPathError.ACCESS_DENIED
+        else -> DriverPathError.STORAGE_ERROR
+    }
+
+    private fun archiveError(code: String): DriverArchiveError = when (code) {
+        "INVALID_PATH" -> DriverArchiveError.INVALID_ZIP
+        "ACCESS_DENIED", "STORAGE_ERROR", "INVALID_ARGUMENT" -> DriverArchiveError.STORAGE_ERROR
+        "INVALID_DRIVER_LIBRARY" -> DriverArchiveError.UNSUPPORTED_ABI
+        "INVALID_ARCHIVE", "LIMIT_EXCEEDED", "UNSUPPORTED_ARCHIVE" -> DriverArchiveError.INVALID_ZIP
+        else -> DriverArchiveError.INVALID_ZIP
+    }
+
+    private fun decodeProtocolText(encoded: String): String {
+        val decoded = try {
+            Base64.decode(encoded)
+        } catch (_: Exception) {
+            throw DriverStoreException(DriverArchiveError.INVALID_ZIP)
+        }
+        if (Base64.encode(decoded) != encoded) throw DriverStoreException(DriverArchiveError.INVALID_ZIP)
+        return try {
+            decoded.decodeToString(throwOnInvalidSequence = true)
+        } catch (_: Exception) {
+            throw DriverStoreException(DriverArchiveError.INVALID_ZIP)
+        }
+    }
+
+    private fun parseProtocolFlag(value: String): Boolean = when (value) {
+        "0" -> false
+        "1" -> true
+        else -> throw DriverStoreException(DriverArchiveError.INVALID_ZIP)
+    }
+
+    private fun parseHexBytes(output: String): ByteArray = try {
+        output.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }.map { token ->
+            token.toInt(16).also { require(it in 0..255) }.toByte()
+        }.toByteArray()
+    } catch (_: Exception) {
+        byteArrayOf()
+    }
+
+    private fun isSafePathEntryName(name: String): Boolean =
+        name.isNotEmpty() && name != "." && name != ".." && '/' !in name && '\\' !in name && '\u0000' !in name
+
+    private fun helperCommand(vararg arguments: String): String {
+        val dexPath = ModuleInfo.MODULE_PROP_PATH.substringBeforeLast('/') + "/driver-importer.dex"
+        val preferredVm = "/apex/com.android.art/bin/dalvikvm64"
+        val fallbackVm = "/system/bin/dalvikvm64"
+        fun invocation(vm: String) = listOf(vm, "-cp", dexPath, HELPER_CLASS, *arguments)
+            .joinToString(" ") { quote(it) }
+        return "if [ -x ${quote(preferredVm)} ]; then ${invocation(preferredVm)}; " +
+            "elif [ -x ${quote(fallbackVm)} ]; then ${invocation(fallbackVm)}; else exit 127; fi"
+    }
 
     suspend fun listDrivers(): List<DriverInfo> = PlatformBridge.listDrivers()
 
@@ -47,48 +370,10 @@ object DriverRepository {
     internal fun canDelete(driverId: String, config: ModuleConfig): Boolean =
         config.packageSettings.values.none { it.driverId == driverId }
 
-    internal suspend fun transfer(
-        read: suspend (ByteArray) -> Int,
-        appendBase64: suspend (String) -> Unit,
-    ): String {
-        val buffer = ByteArray(CHUNK_SIZE)
-        val pending = ByteArray(CHUNK_SIZE)
-        var pendingSize = 0
-        val hash = Sha256()
-        while (true) {
-            val count = read(buffer)
-            if (count < 0) break
-            if (count == 0) throw DriverStoreException(DriverArchiveError.TRANSFER_FAILED)
-            require(count <= CHUNK_SIZE)
-            hash.update(buffer, count)
-            var offset = 0
-            while (offset < count) {
-                val copied = minOf(CHUNK_SIZE - pendingSize, count - offset)
-                buffer.copyInto(pending, pendingSize, offset, offset + copied)
-                pendingSize += copied
-                offset += copied
-                if (pendingSize == CHUNK_SIZE) {
-                    appendBase64(Base64.encode(pending))
-                    pendingSize = 0
-                }
-            }
-        }
-        if (pendingSize > 0) appendBase64(Base64.encode(pending.copyOf(pendingSize)))
-        return hash.hexDigest()
-    }
-
     internal fun parseMeta(raw: String): Map<String, String> = try {
         json.parseToJsonElement(raw).jsonObject.mapValues { it.value.jsonPrimitive.content }
     } catch (_: Exception) {
         throw DriverStoreException(DriverArchiveError.INVALID_META_JSON_ENTRY)
-    }
-
-    internal fun checkArchiveSize(size: Long) {
-        if (size <= 0 || size > MAX_ARCHIVE_BYTES) throw DriverStoreException(DriverArchiveError.INVALID_ZIP)
-    }
-
-    internal fun checkMetaSize(size: Int) {
-        if (size > MAX_META_BYTES) throw DriverStoreException(DriverArchiveError.INVALID_META_JSON_ENTRY)
     }
 
     internal suspend fun readIndex(execute: RootCommand = PlatformBridge::exec): List<DriverRecord> {
@@ -141,115 +426,13 @@ object DriverRepository {
         }
     }
 
-    /** [streamFile] emits independently encoded chunks from a validated ZIP entry. */
-    internal suspend fun publish(
-        archiveSha256: String,
-        entries: List<DriverFileInfo>,
-        metaJson: Map<String, String>,
-        importedAtEpochMillis: Long,
-        execute: RootCommand = PlatformBridge::exec,
-        streamFile: suspend (String, suspend (String) -> Unit) -> Unit,
-    ): DriverImportResult {
-        val validation = DriverArchivePolicy.validate(archiveSha256, entries, metaJson)
-        if (validation !is DriverImportResult.Accepted) return validation
-        val driver = validation.driver
-        if (!idPattern.matches(driver.driverId) || driver.driverId.length > 240 ||
-            !libraryPattern.matches(driver.libraryName)) {
-            return DriverImportResult.Rejected(DriverArchiveError.INVALID_ENTRY_PATH)
-        }
-        val stage = "$root/.stage-${nonce()}"
-        val final = "$root/${driver.driverId}"
-        try {
-            checked("mkdir -p ${quote(root)} && mkdir ${quote(stage)}", execute)
-            val libraries = (listOf(driver.libraryName) + entries.filter {
-                it.isRegularFile && it.path.endsWith(".so")
-            }.map { it.path }).distinct()
-            val verifiedHashes = mutableMapOf<String, String>()
-            var expandedSize = 0L
-            for (name in listOf("meta.json") + libraries) {
-                val path = "$stage/$name"
-                checked(": > ${quote(path)}", execute)
-                val sourceHash = Sha256()
-                var size = 0L
-                val header = ByteArray(DriverElfHeader.SIZE)
-                var headerSize = 0
-                val writes = mutableListOf<String>()
-                suspend fun flushWrites() {
-                    if (writes.isEmpty()) return
-                    checked(writes.joinToString(" && "), execute)
-                    writes.clear()
-                }
-                streamFile(name) { base64 ->
-                    val bytes = try { Base64.decode(base64) } catch (_: Exception) {
-                        throw DriverStoreException(DriverArchiveError.TRANSFER_FAILED)
-                    }
-                    if (bytes.isEmpty() || bytes.size > CHUNK_SIZE) throw DriverStoreException(DriverArchiveError.TRANSFER_FAILED)
-                    size += bytes.size
-                    expandedSize += bytes.size
-                    if (name == "meta.json") checkMetaSize(size.toInt())
-                    if (expandedSize > MAX_ARCHIVE_BYTES) throw DriverStoreException(DriverArchiveError.INVALID_ZIP)
-                    val prefixSize = minOf(bytes.size, header.size - headerSize)
-                    bytes.copyInto(header, headerSize, 0, prefixSize)
-                    headerSize += prefixSize
-                    sourceHash.update(bytes)
-                    writes += "printf '%s' ${quote(base64)} | base64 -d >> ${quote(path)}"
-                    // Keep the su command below Android's per-argument size limit.
-                    if (writes.size == 3) flushWrites()
-                }
-                flushWrites()
-                if (size == 0L) throw DriverStoreException(DriverArchiveError.TRANSFER_FAILED)
-                if (name != "meta.json" && (headerSize < header.size || !DriverElfHeader.isArm64Library(header))) {
-                    throw DriverStoreException(DriverArchiveError.UNSUPPORTED_ABI)
-                }
-                val rootHash = checked("sha256sum ${quote(path)}", execute).stdout.substringBefore(' ').lowercase()
-                if (rootHash != sourceHash.hexDigest()) throw DriverStoreException(DriverArchiveError.TRANSFER_FAILED)
-                verifiedHashes[name] = rootHash
-            }
-            return RepositoryMutationGuard.mutate {
-                val latest = readIndex(execute)
-                val existing = latest.firstOrNull { it.driverId == driver.driverId }
-                if (existing != null) {
-                    for ((name, expectedHash) in verifiedHashes) {
-                        val installedHash = checked("sha256sum ${quote("$final/$name")}", execute)
-                            .stdout.substringBefore(' ').lowercase()
-                        if (installedHash != expectedHash) throw DriverStoreException(DriverArchiveError.STORAGE_ERROR)
-                    }
-                    return@mutate DriverImportResult.Accepted(existing.info())
-                }
-                val occupied = execute("test -e ${quote(final)} || test -L ${quote(final)}")
-                if (occupied.errno == 0) throw DriverStoreException(DriverArchiveError.STORAGE_ERROR)
-                val record = DriverRecord(driver.driverId, driver.name, driver.libraryName, driver.abi,
-                    importedAtEpochMillis, archiveSha256.lowercase())
-                val preparedIndex = prepareIndex(latest + record, execute)
-                try {
-                    checked("if [ -e ${quote(final)} ] || [ -L ${quote(final)} ]; then exit 17; fi; mv ${quote(stage)} ${quote(final)}", execute)
-                    try {
-                        checked("mv ${quote(preparedIndex)} ${quote(indexPath)}", execute)
-                    } catch (e: Exception) {
-                        execute("rm -rf ${quote(final)}")
-                        throw e
-                    }
-                    DriverImportResult.Accepted(record.info())
-                } finally {
-                    execute("rm -f ${quote(preparedIndex)}")
-                }
-            }
-        } catch (e: DriverStoreException) {
-            return DriverImportResult.Rejected(e.code)
-        } catch (_: Exception) {
-            return DriverImportResult.Rejected(DriverArchiveError.STORAGE_ERROR)
-        } finally {
-            execute("if [ -d ${quote(stage)} ]; then rm -rf ${quote(stage)}; fi")
-        }
-    }
-
     private suspend fun prepareIndex(records: List<DriverRecord>, execute: RootCommand): String {
         val temp = "$root/.index-${nonce()}"
         try {
             checked(": > ${quote(temp)}", execute)
             val bytes = json.encodeToString(records).encodeToByteArray()
             var offset = 0
-            transfer(
+            RootFileTransfer.transfer(
                 read = { buffer ->
                     if (offset == bytes.size) -1 else {
                         val count = minOf(buffer.size, bytes.size - offset)

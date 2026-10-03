@@ -60,6 +60,16 @@ class DriverArchivePolicyTest {
     )
 
     @Test
+    fun rejectsDuplicateNormalizedEntryPaths() = assertRejected(
+        validEntries + listOf(
+            DriverFileInfo("docs/readme.txt", isRegularFile = true),
+            DriverFileInfo("docs/readme.txt", isRegularFile = true),
+        ),
+        validMetadata,
+        DriverArchiveError.INVALID_ENTRY_PATH,
+    )
+
+    @Test
     fun rejectsSymbolicLinkEntry() = assertRejected(
         listOf(validEntries[0], DriverFileInfo("libVkDriver.so", isRegularFile = false, isSymbolicLink = true)),
         validMetadata,

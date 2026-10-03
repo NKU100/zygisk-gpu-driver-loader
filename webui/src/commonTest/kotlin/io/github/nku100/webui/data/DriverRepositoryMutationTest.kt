@@ -3,14 +3,15 @@ package io.github.nku100.webui.data
 import io.github.nku100.webui.ModuleInfo
 import io.github.nku100.webui.platform.ShellResult
 import kotlinx.serialization.json.Json
+import kotlin.io.encoding.Base64
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.startCoroutine
 import kotlin.coroutines.suspendCoroutine
-import kotlin.io.encoding.Base64
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertContentEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
@@ -113,7 +114,7 @@ class DriverRepositoryMutationTest {
     }
 
     @Test
-    fun occupiedFinalDirectoryIsNeverUsedAsMoveDestination() {
+    fun existingFinalDirectoryIsNeverOverwritten() {
         val shell = InMemoryRootShell()
         val info = accepted('a')
         shell.directories += "${shell.root}/${info.driverId}"
@@ -124,6 +125,78 @@ class DriverRepositoryMutationTest {
         assertTrue(shell.index().isEmpty())
         assertTrue(shell.directories.contains("${shell.root}/${info.driverId}"))
         assertFalse(shell.directories.any { it.startsWith("${shell.root}/${info.driverId}/.stage-") })
+    }
+
+    @Test
+    fun publishesPreparedFilesWithoutBase64Writes() {
+        val shell = InMemoryRootShell()
+        val library = arm64ElfHeader() + byteArrayOf(3, 5, 7)
+
+        val result = completed { publish(shell, 'a', 1L, libraryBytes = library) }
+
+        val driver = assertIs<DriverImportResult.Accepted>(result).driver
+        assertContentEquals(library, shell.files["${shell.root}/${driver.driverId}/liba.so"])
+        assertFalse(shell.commands.any { it.contains("base64 -d") && it.contains(".stage-") })
+    }
+
+    @Test
+    fun duplicatePreparedImportPreservesStoredRecord() {
+        val shell = InMemoryRootShell()
+        val first = assertIs<DriverImportResult.Accepted>(completed { publish(shell, 'a', 1234L) }).driver
+
+        val duplicate = assertIs<DriverImportResult.Accepted>(completed { publish(shell, 'a', 9999L) }).driver
+
+        assertEquals(first, duplicate)
+        assertEquals(listOf(first), completed { DriverRepository.listStored(shell::exec) })
+        assertEquals(1, shell.index().size)
+    }
+
+    @Test
+    fun stagedFileHashMismatchIsRejected() {
+        val shell = InMemoryRootShell()
+        val prepared = prepared(shell, 'a', libraryBytes = arm64ElfHeader(), corruptLibraryHash = true)
+
+        val result = completed { DriverRepository.publishPrepared(prepared, 1L, shell::exec) }
+
+        assertEquals(DriverArchiveError.TRANSFER_FAILED, assertIs<DriverImportResult.Rejected>(result).error)
+        assertTrue(shell.index().isEmpty())
+        assertFalse(shell.directories.any { it == "${shell.root}/${prepared.stageName}" })
+    }
+
+    @Test
+    fun failedPreparedImportPreservesIndexAndBindings() {
+        val shell = InMemoryRootShell()
+        val existing = assertIs<DriverImportResult.Accepted>(completed { publish(shell, 'b', 4L) }).driver
+        val config = ModuleConfig(packageSettings = mapOf("example.app" to PackageSettings(driverId = existing.driverId)))
+        shell.files[ModuleInfo.CONFIG_PATH] = Json.encodeToString(config).encodeToByteArray()
+        val candidate = prepared(shell, 'a')
+        shell.failOn = { it.startsWith("mv ") && it.endsWith("'${shell.root}/index.json'") }
+
+        val result = completed { DriverRepository.publishPrepared(candidate, 5L, shell::exec) }
+
+        assertEquals(DriverArchiveError.STORAGE_ERROR, assertIs<DriverImportResult.Rejected>(result).error)
+        assertEquals(listOf(existing.driverId), shell.index().map { it.driverId })
+        assertEquals(config, Json.decodeFromString<ModuleConfig>(shell.text(ModuleInfo.CONFIG_PATH)))
+        assertFalse("${shell.root}/${accepted('a').driverId}" in shell.directories)
+        assertFalse(shell.directories.any { it == "${shell.root}/${candidate.stageName}" })
+    }
+
+    @Test
+    fun failedIndexRenameRemovesOnlyOwnedStage() {
+        val shell = InMemoryRootShell()
+        val candidate = prepared(shell, 'a')
+        val unrelatedStage = "${shell.root}/.stage-deadbeef"
+        shell.directories += unrelatedStage
+        shell.files["$unrelatedStage/keep.txt"] = byteArrayOf(1, 2, 3)
+        shell.failOn = { it.startsWith("mv ") && it.endsWith("'${shell.root}/index.json'") }
+
+        val result = completed { DriverRepository.publishPrepared(candidate, 1L, shell::exec) }
+
+        assertEquals(DriverArchiveError.STORAGE_ERROR, assertIs<DriverImportResult.Rejected>(result).error)
+        assertFalse("${shell.root}/${candidate.stageName}" in shell.directories)
+        assertTrue(unrelatedStage in shell.directories)
+        assertTrue("$unrelatedStage/keep.txt" in shell.files)
+        assertTrue(shell.index().isEmpty())
     }
 
     @Test
@@ -210,24 +283,29 @@ class DriverRepositoryMutationTest {
         extraLibraries: Map<String, ByteArray> = emptyMap(),
         pause: suspend () -> Unit = {},
     ): DriverImportResult {
+        val prepared = prepared(shell, suffix, libraryBytes, includeAbi, extraLibraries)
+        pause()
+        return DriverRepository.publishPrepared(prepared, importedAt, shell::exec)
+    }
+
+    private fun prepared(
+        shell: InMemoryRootShell,
+        suffix: Char,
+        libraryBytes: ByteArray = arm64ElfHeader(),
+        includeAbi: Boolean = true,
+        extraLibraries: Map<String, ByteArray> = emptyMap(),
+        corruptLibraryHash: Boolean = false,
+    ): DriverPreparedImport {
         val library = "lib$suffix.so"
         val meta = """{"name":"Driver $suffix","libraryName":"$library"${if (includeAbi) ",\"abi\":\"arm64-v8a\"" else ""}}"""
-        return DriverRepository.publish(
-            suffix.toString().repeat(64),
-            listOf(DriverFileInfo("meta.json", true), DriverFileInfo(library, true)) +
-                extraLibraries.keys.map { DriverFileInfo(it, true) },
-            mapOf("name" to "Driver $suffix", "libraryName" to library) +
-                if (includeAbi) mapOf("abi" to "arm64-v8a") else emptyMap(),
-            importedAt,
-            execute = shell::exec,
-        ) { name, append ->
-            if (name == "meta.json") pause()
-            append(Base64.encode(when (name) {
-                "meta.json" -> meta.encodeToByteArray()
-                library -> libraryBytes
-                else -> extraLibraries.getValue(name)
-            }))
-        }
+        val metadata = mapOf("name" to "Driver $suffix", "libraryName" to library) +
+            if (includeAbi) mapOf("abi" to "arm64-v8a") else emptyMap()
+        val contents = mapOf("meta.json" to meta.encodeToByteArray(), library to libraryBytes) + extraLibraries
+        val entries = contents.keys.map { DriverFileInfo(it, true) }
+        val stageName = shell.seedStage(contents)
+        val hashes = contents.mapValues { Sha256.digestHex(it.value) }.toMutableMap()
+        if (corruptLibraryHash) hashes[library] = "0".repeat(64)
+        return DriverPreparedImport(suffix.toString().repeat(64), entries, metadata, hashes, stageName)
     }
 
     private fun accepted(suffix: Char): DriverInfo =
@@ -256,16 +334,27 @@ private class InMemoryRootShell {
     private val indexPath = "$root/index.json"
     val files = mutableMapOf<String, ByteArray>()
     val directories = mutableSetOf(root)
+    val commands = mutableListOf<String>()
     var pauseOn: ((String) -> Boolean)? = null
     var failOn: ((String) -> Boolean)? = null
     private var blocked: Continuation<Unit>? = null
+    private var stageCounter = 0
     private val quoted = Regex("'([^']*)'")
 
     fun text(path: String) = files.getValue(path).decodeToString()
     fun index(): List<DriverRecord> = files[indexPath]?.decodeToString()?.let { Json.decodeFromString<List<DriverRecord>>(it) } ?: emptyList()
     fun resume() { requireNotNull(blocked).also { blocked = null }.resume(Unit) }
 
+    fun seedStage(contents: Map<String, ByteArray>): String {
+        val stageName = ".stage-${(++stageCounter).toString(16)}"
+        val stagePath = "$root/$stageName"
+        directories += stagePath
+        contents.forEach { (name, bytes) -> files["$stagePath/$name"] = bytes }
+        return stageName
+    }
+
     suspend fun exec(command: String): ShellResult {
+        commands += command
         if (pauseOn?.invoke(command) == true) {
             pauseOn = null
             suspendCoroutine<Unit> { blocked = it }
@@ -276,6 +365,7 @@ private class InMemoryRootShell {
         fun failed() = ShellResult(1, "", "missing or occupied")
         return when {
             command.startsWith("if [ -f ") -> ok(files[args.first()]?.decodeToString().orEmpty())
+            command.startsWith("cat ") -> files[args.first()]?.decodeToString()?.let(::ok) ?: failed()
             command.startsWith("mkdir -p ") -> {
                 directories += args[0]
                 if (!directories.add(args[1])) failed() else ok()
@@ -286,23 +376,36 @@ private class InMemoryRootShell {
                 files[path] = files.getValue(path) + Base64.decode(args[1])
                 ok()
             }
+            command.startsWith("od -An ") -> files[args.last()]?.let { bytes ->
+                ok(bytes.take(64).joinToString(" ") { it.toUByte().toString(16).padStart(2, '0') })
+            } ?: failed()
             command.startsWith("sha256sum ") -> files[args[0]]?.let { ok("${Sha256.digestHex(it)}  ${args[0]}\n") } ?: failed()
             command.startsWith("test -f ") -> if (args.all { it in files }) ok() else failed()
+            command.startsWith("test -d ") -> if (args.first() in directories) ok() else failed()
             command.startsWith("test -e ") -> if (args.first() in directories || args.first() in files) ok() else failed()
             command.startsWith("if [ -e ") -> {
-                val destination = args.last()
-                if (destination in directories || destination in files) failed() else move(args[2], destination)
+                if (command.contains("rm -rf")) {
+                    remove(args.last())
+                    ok()
+                } else {
+                    val destination = args.last()
+                    if (destination in directories || destination in files) failed() else move(args[2], destination)
+                }
             }
             command.startsWith("mv ") -> move(args[0], args[1])
             command.startsWith("rm -rf ") || command.startsWith("if [ -d ") -> {
                 val path = args.first()
-                directories.removeAll { it == path || it.startsWith("$path/") }
-                files.keys.removeAll { it == path || it.startsWith("$path/") }
+                remove(path)
                 ok()
             }
             command.startsWith("rm -f ") -> { files.remove(args[0]); ok() }
             else -> error("Unexpected shell command: $command")
         }
+    }
+
+    private fun remove(path: String) {
+        directories.removeAll { it == path || it.startsWith("$path/") }
+        files.keys.removeAll { it == path || it.startsWith("$path/") }
     }
 
     private fun move(from: String, to: String): ShellResult {

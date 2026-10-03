@@ -17,6 +17,22 @@ data class DriverFileInfo(
     val isSymbolicLink: Boolean = false,
 )
 
+data class DriverDirectory(val path: String, val entries: List<DriverPathEntry>)
+
+data class DriverPathEntry(val name: String, val isDirectory: Boolean)
+
+enum class DriverPathError { INVALID_PATH, ACCESS_DENIED, STORAGE_ERROR }
+
+class DriverPathException(val error: DriverPathError) : Exception(error.name)
+
+data class DriverPreparedImport(
+    val archiveSha256: String,
+    val entries: List<DriverFileInfo>,
+    val metaJson: Map<String, String>,
+    val fileHashes: Map<String, String>,
+    val stageName: String,
+)
+
 /** Result of validating a driver archive. */
 sealed interface DriverImportResult {
     data class Accepted(val driver: DriverInfo) : DriverImportResult
