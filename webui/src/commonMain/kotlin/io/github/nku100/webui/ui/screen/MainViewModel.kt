@@ -8,6 +8,9 @@ import io.github.nku100.webui.data.ConfigRepository
 import io.github.nku100.webui.data.DriverArchiveError
 import io.github.nku100.webui.data.DriverDeleteResult
 import io.github.nku100.webui.data.DriverImportResult
+import io.github.nku100.webui.data.DriverPathException
+import io.github.nku100.webui.data.DriverPathError
+import io.github.nku100.webui.data.DriverPathEntry
 import io.github.nku100.webui.data.DriverRepository
 import io.github.nku100.webui.data.ModuleConfig
 import io.github.nku100.webui.data.PackageSettings
@@ -20,6 +23,7 @@ import io.github.nku100.webui.platform.hasPlatformApi
 import io.github.nku100.webui.ui.component.SearchStatus
 import io.github.nku100.webui.ui.screen.drivers.DriversUiState
 import io.github.nku100.webui.ui.screen.drivers.DriverListStatus
+import io.github.nku100.webui.ui.screen.drivers.DriverZipPickerState
 import io.github.nku100.webui.ui.screen.drivers.withPackageDriver
 import io.github.nku100.webui.ui.theme.ThemeMode
 import io.github.nku100.webui.ui.screen.settings.UpdateChannel
@@ -299,12 +303,62 @@ class MainViewModel : ViewModel() {
         saveConfig(updated)
     }
 
-    fun importDriver(): Job = viewModelScope.launch {
+    fun openDriverZipPicker(): Job = viewModelScope.launch {
         val current = _uiState.value.drivers
         if (current.isBusy || !current.canImport) return@launch
-        _uiState.update { it.copy(drivers = current.copy(isBusy = true, importError = null, importedDriver = null, deleteError = null)) }
+        _uiState.update {
+            it.copy(drivers = it.drivers.copy(importError = null, importedDriver = null, deleteError = null,
+                zipPicker = it.drivers.zipPicker.open()))
+        }
+        readDriverZipDirectory(DriverZipPickerState.DOWNLOADS_PATH)
+    }
+
+    fun browseDriverZipDirectory(path: String): Job = viewModelScope.launch {
+        readDriverZipDirectory(path)
+    }
+
+    fun retryDriverZipDirectory(): Job = viewModelScope.launch {
+        readDriverZipDirectory(_uiState.value.drivers.zipPicker.path)
+    }
+
+    fun selectDriverZip(entry: DriverPathEntry) {
+        _uiState.update { it.copy(drivers = it.drivers.copy(zipPicker = it.drivers.zipPicker.select(entry))) }
+    }
+
+    fun closeDriverZipPicker() {
+        _uiState.update { it.copy(drivers = it.drivers.copy(zipPicker = it.drivers.zipPicker.close())) }
+    }
+
+    fun importSelectedDriverZip(): Job = viewModelScope.launch {
+        val path = _uiState.value.drivers.zipPicker.selectedZipPath ?: return@launch
+        closeDriverZipPicker()
+        importDriverZip(path)
+    }
+
+    private suspend fun readDriverZipDirectory(path: String) {
+        val picker = _uiState.value.drivers.zipPicker
+        if (!picker.isOpen || _uiState.value.drivers.isBusy) return
+        _uiState.update { it.copy(drivers = it.drivers.copy(zipPicker = it.drivers.zipPicker.loading(path))) }
         try {
-            when (val result = DriverRepository.importDriverZip()) {
+            val directory = DriverRepository.listZipDirectory(path)
+            _uiState.update { it.copy(drivers = it.drivers.copy(zipPicker = it.drivers.zipPicker.loaded(directory))) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: DriverPathException) {
+            _uiState.update { it.copy(drivers = it.drivers.copy(zipPicker = it.drivers.zipPicker.failed(e.error))) }
+        } catch (_: Exception) {
+            _uiState.update {
+                it.copy(drivers = it.drivers.copy(zipPicker = it.drivers.zipPicker.failed(DriverPathError.STORAGE_ERROR)))
+            }
+        }
+    }
+
+    private suspend fun importDriverZip(path: String) {
+        val current = _uiState.value.drivers
+        if (current.isBusy || !current.canImport) return
+        _uiState.update { it.copy(drivers = it.drivers.copy(isBusy = true, importError = null, importedDriver = null, deleteError = null)) }
+        try {
+            when (val result = DriverRepository.importDriverZip(path)) {
                 is DriverImportResult.Accepted -> {
                     _uiState.update { it.copy(drivers = it.drivers.afterSuccessfulImport(result.driver)) }
                     refreshDriverList()

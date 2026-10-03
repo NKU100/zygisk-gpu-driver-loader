@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.sp
 import io.github.nku100.webui.data.DriverArchiveError
 import io.github.nku100.webui.data.DriverDeleteResult
 import io.github.nku100.webui.data.DriverInfo
+import io.github.nku100.webui.data.DriverPathEntry
 import io.github.nku100.webui.data.ModuleConfig
 import io.github.nku100.webui.ui.util.rememberDefaultBlurBackdrop
 import io.github.nku100.webui.ui.util.topBarDefaultWindowInsetsPadding
@@ -66,7 +67,12 @@ fun DriversPage(
     state: DriversUiState,
     config: ModuleConfig,
     onBack: () -> Unit,
-    onImport: () -> Unit,
+    onOpenZipPicker: () -> Unit,
+    onBrowseZipDirectory: (String) -> Unit,
+    onSelectZip: (DriverPathEntry) -> Unit,
+    onRetryZipDirectory: () -> Unit,
+    onCancelZipPicker: () -> Unit,
+    onImportSelectedZip: () -> Unit,
     onDelete: (String) -> Unit,
     onRetryList: () -> Unit,
     bottomPadding: Dp,
@@ -112,7 +118,7 @@ fun DriversPage(
                             title = stringResource(Res.string.import_driver_zip),
                             summary = if (state.canImport) stringResource(Res.string.import_driver_summary)
                                 else stringResource(Res.string.driver_preview_unavailable),
-                            onClick = { if (state.canImport && !state.isBusy) onImport() },
+                            onClick = { if (state.canImport && !state.isBusy) onOpenZipPicker() },
                         )
                     }
                 }
@@ -223,6 +229,15 @@ fun DriversPage(
                     }
                 }
             }
+
+            DriverZipPickerDialog(
+                state = state,
+                onBrowseDirectory = onBrowseZipDirectory,
+                onSelectZip = onSelectZip,
+                onRetry = onRetryZipDirectory,
+                onCancel = onCancelZipPicker,
+                onImport = onImportSelectedZip,
+            )
         }
     }
 }

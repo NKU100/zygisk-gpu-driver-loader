@@ -76,6 +76,20 @@
     <!-- DriversPage -->
     <string name="import_driver_zip">导入驱动 ZIP</string>
     <string name="import_driver_summary">选择本地 AdrenoTools ZIP</string>
+    <string name="driver_picker_title">选择驱动 ZIP</string>
+    <string name="driver_picker_storage_root">内部存储</string>
+    <string name="driver_picker_folder">文件夹</string>
+    <string name="driver_picker_zip">ZIP 文件</string>
+    <string name="driver_picker_loading">正在读取目录…</string>
+    <string name="driver_picker_empty">此处没有文件夹或 ZIP 文件</string>
+    <string name="driver_picker_access_denied">无法访问此目录</string>
+    <string name="driver_picker_invalid_path">此目录不在共享存储范围内</string>
+    <string name="driver_picker_storage_error">无法读取此目录</string>
+    <string name="driver_picker_retry">重试</string>
+    <string name="driver_picker_import">导入</string>
+    <string name="driver_picker_folder_accessibility">%1$s，文件夹</string>
+    <string name="driver_picker_zip_accessibility">%1$s，ZIP 文件</string>
+    <string name="driver_picker_selected_accessibility">%1$s，已选择的 ZIP 文件</string>
     <string name="driver_preview_unavailable">导入需要模块 Root 桥接</string>
     <string name="driver_working">处理中…</string>
     <string name="driver_import_success">驱动已就绪：%1$s</string>

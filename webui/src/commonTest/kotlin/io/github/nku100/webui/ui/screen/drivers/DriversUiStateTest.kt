@@ -2,6 +2,9 @@ package io.github.nku100.webui.ui.screen.drivers
 
 import io.github.nku100.webui.data.DriverInfo
 import io.github.nku100.webui.data.DriverArchiveError
+import io.github.nku100.webui.data.DriverDirectory
+import io.github.nku100.webui.data.DriverPathEntry
+import io.github.nku100.webui.data.DriverPathError
 import io.github.nku100.webui.data.ModuleConfig
 import io.github.nku100.webui.data.PackageSettings
 import kotlin.test.Test
@@ -118,5 +121,42 @@ class DriversUiStateTest {
         assertEquals(DriverListStatus.STALE, afterRefreshFailure.listStatus)
         assertNull(afterRefreshFailure.deleteError)
         assertTrue(afterRefreshFailure.canRetryList)
+    }
+
+    @Test
+    fun pickerStartsInDownloadsAndClearsSelectionWhenBrowsing() {
+        val initial = DriverZipPickerState().open()
+        val loaded = initial.loaded(DriverDirectory(initial.path, listOf(
+            DriverPathEntry("folder", true), DriverPathEntry("Turnip.zip", false),
+        )))
+        val selected = loaded.select(DriverPathEntry("Turnip.zip", false))
+        val browsing = selected.loading("/storage/emulated/0/Drivers")
+
+        assertEquals("/storage/emulated/0/Download", initial.path)
+        assertEquals("/storage/emulated/0/Download/Turnip.zip", selected.selectedZipPath)
+        assertNull(browsing.selectedZipPath)
+        assertTrue(browsing.isLoading)
+        assertNull(browsing.error)
+    }
+
+    @Test
+    fun pickerSystemBackMovesUpThenCancelsAtSharedStorageRoot() {
+        val nested = DriverZipPickerState(path = "/storage/emulated/0/Download/Drivers")
+        val parent = nested.parentPath()
+        val downloads = DriverZipPickerState(path = "/storage/emulated/0/Download")
+        val storageRoot = DriverZipPickerState(path = "/storage/emulated/0")
+
+        assertEquals("/storage/emulated/0/Download", parent)
+        assertEquals("/storage/emulated/0", downloads.parentPath())
+        assertEquals(null, storageRoot.parentPath())
+    }
+
+    @Test
+    fun pickerErrorStateRetainsCurrentPathForRetry() {
+        val failed = DriverZipPickerState().open().failed(DriverPathError.ACCESS_DENIED)
+
+        assertEquals("/storage/emulated/0/Download", failed.path)
+        assertEquals(DriverPathError.ACCESS_DENIED, failed.error)
+        assertFalse(failed.isLoading)
     }
 }
