@@ -80,7 +80,6 @@
     <string name="driver_picker_storage_root">Internal storage</string>
     <string name="driver_picker_folder">Folder</string>
     <string name="driver_picker_zip">ZIP file</string>
-    <string name="driver_picker_loading">Loading directory…</string>
     <string name="driver_picker_empty">No folders or ZIP files here</string>
     <string name="driver_picker_access_denied">Can't access this directory</string>
     <string name="driver_picker_invalid_path">This directory is outside shared storage</string>

@@ -1,5 +1,6 @@
 package io.github.nku100.webui.ui.screen.drivers
 
+import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -12,9 +13,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -28,6 +29,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Folder
@@ -44,9 +46,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.navigationevent.NavigationEventInfo
 import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigationevent.compose.rememberNavigationEventState
@@ -69,7 +72,6 @@ import zygisk_module_webui_template.webui.generated.resources.driver_picker_empt
 import zygisk_module_webui_template.webui.generated.resources.driver_picker_folder_accessibility
 import zygisk_module_webui_template.webui.generated.resources.driver_picker_import
 import zygisk_module_webui_template.webui.generated.resources.driver_picker_invalid_path
-import zygisk_module_webui_template.webui.generated.resources.driver_picker_loading
 import zygisk_module_webui_template.webui.generated.resources.driver_picker_retry
 import zygisk_module_webui_template.webui.generated.resources.driver_picker_selected_accessibility
 import zygisk_module_webui_template.webui.generated.resources.driver_picker_storage_error
@@ -90,6 +92,12 @@ internal fun DriverZipPickerDialog(
     val picker = state.zipPicker
     if (!picker.isOpen) return
 
+    val browseDirectory: (String) -> Unit = { path ->
+        if (path != picker.path && !picker.isLoading && !state.isBusy) {
+            onBrowseDirectory(path)
+        }
+    }
+
     OverlayDialog(
         title = stringResource(Res.string.driver_picker_title),
         show = true,
@@ -98,63 +106,78 @@ internal fun DriverZipPickerDialog(
         val navigationEventState = rememberNavigationEventState(NavigationEventInfo.None)
         NavigationBackHandler(
             state = navigationEventState,
-            isBackEnabled = true,
+            isBackEnabled = !picker.isLoading && !state.isBusy,
             onBackCompleted = {
-                picker.parentPath()?.let(onBrowseDirectory) ?: onCancel()
+                picker.parentPath()?.let(browseDirectory) ?: onCancel()
             },
         )
 
         Column(Modifier.fillMaxWidth().widthIn(max = 520.dp).heightIn(min = 220.dp, max = 600.dp)) {
-            BreadcrumbHeader(picker, onBrowseDirectory, onCancel)
+            BreadcrumbHeader(picker, browseDirectory, onCancel)
             Spacer(Modifier.height(8.dp))
-            when {
-                picker.isLoading -> Text(stringResource(Res.string.driver_picker_loading), color = colorScheme.onSurfaceVariantSummary)
-                picker.error != null -> {
-                    Text(
-                        when (picker.error) {
-                            DriverPathError.INVALID_PATH -> stringResource(Res.string.driver_picker_invalid_path)
-                            DriverPathError.ACCESS_DENIED -> stringResource(Res.string.driver_picker_access_denied)
-                            DriverPathError.STORAGE_ERROR -> stringResource(Res.string.driver_picker_storage_error)
-                        },
-                        color = colorScheme.error,
-                    )
-                    MaterialTextButton(onClick = onRetry) { Text(stringResource(Res.string.driver_picker_retry)) }
-                }
-                else -> Column(Modifier.weight(1f).fillMaxWidth()) {
-                    if (!picker.isAtStorageRoot) {
-                        DriverPathRow(
-                            name = "..",
-                            isDirectory = true,
-                            contentDescription = stringResource(Res.string.driver_picker_folder_accessibility, ".."),
-                            enabled = !state.isBusy,
-                            onClick = { picker.parentPath()?.let(onBrowseDirectory) },
-                        )
-                    }
-                    if (picker.entries.isEmpty()) {
-                        Text(
-                            stringResource(Res.string.driver_picker_empty),
-                            color = colorScheme.onSurfaceVariantSummary,
-                        )
-                    } else {
-                        LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
-                            items(picker.entries, key = { it.name }) { entry ->
-                                val selected = picker.selectedFileName == entry.name
-                                val description = when {
-                                    entry.isDirectory -> stringResource(Res.string.driver_picker_folder_accessibility, entry.name)
-                                    selected -> stringResource(Res.string.driver_picker_selected_accessibility, entry.name)
-                                    else -> stringResource(Res.string.driver_picker_zip_accessibility, entry.name)
-                                }
-                                DriverPathRow(
-                                    name = entry.name,
-                                    isDirectory = entry.isDirectory,
-                                    isSelected = selected,
-                                    contentDescription = description,
-                                    enabled = !state.isBusy,
-                                    onClick = {
-                                        if (entry.isDirectory) picker.childPath(entry)?.let(onBrowseDirectory)
-                                        else onSelectZip(entry)
+            Box(
+                Modifier.weight(1f).fillMaxWidth(),
+                contentAlignment = Alignment.TopStart,
+            ) {
+                Crossfade(
+                    targetState = picker.copy(selectedFileName = null),
+                    modifier = Modifier.fillMaxSize(),
+                ) { directory ->
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopStart) {
+                        when {
+                            directory.isLoading -> Unit
+                            directory.error != null -> Column {
+                                Text(
+                                    when (directory.error) {
+                                        DriverPathError.INVALID_PATH -> stringResource(Res.string.driver_picker_invalid_path)
+                                        DriverPathError.ACCESS_DENIED -> stringResource(Res.string.driver_picker_access_denied)
+                                        DriverPathError.STORAGE_ERROR -> stringResource(Res.string.driver_picker_storage_error)
                                     },
+                                    color = colorScheme.error,
                                 )
+                                MaterialTextButton(
+                                    onClick = onRetry,
+                                    enabled = !picker.isLoading && directory.path == picker.path,
+                                ) { Text(stringResource(Res.string.driver_picker_retry)) }
+                            }
+                            else -> Column(Modifier.fillMaxSize()) {
+                                if (!directory.isAtStorageRoot) {
+                                    DriverPathRow(
+                                        name = "..",
+                                        isDirectory = true,
+                                        contentDescription = stringResource(Res.string.driver_picker_folder_accessibility, ".."),
+                                        enabled = !state.isBusy && !picker.isLoading && directory.path == picker.path,
+                                        onClick = { directory.parentPath()?.let(browseDirectory) },
+                                    )
+                                }
+                                if (directory.entries.isEmpty()) {
+                                    Text(
+                                        stringResource(Res.string.driver_picker_empty),
+                                        color = colorScheme.onSurfaceVariantSummary,
+                                    )
+                                } else {
+                                    LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+                                        items(directory.entries, key = { it.name }) { entry ->
+                                            val selected = directory.path == picker.path && picker.selectedFileName == entry.name
+                                            val description = when {
+                                                entry.isDirectory -> stringResource(Res.string.driver_picker_folder_accessibility, entry.name)
+                                                selected -> stringResource(Res.string.driver_picker_selected_accessibility, entry.name)
+                                                else -> stringResource(Res.string.driver_picker_zip_accessibility, entry.name)
+                                            }
+                                            DriverPathRow(
+                                                name = entry.name,
+                                                isDirectory = entry.isDirectory,
+                                                isSelected = selected,
+                                                contentDescription = description,
+                                                enabled = !state.isBusy && !picker.isLoading && directory.path == picker.path,
+                                                onClick = {
+                                                    if (entry.isDirectory) directory.childPath(entry)?.let(browseDirectory)
+                                                    else onSelectZip(entry)
+                                                },
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -178,7 +201,8 @@ internal fun DriverZipPickerDialog(
                 )
                 MiuixButton(
                     onClick = onImport,
-                    enabled = picker.selectedZipPath != null && !picker.isLoading && picker.error == null && !state.isBusy,
+                    enabled = picker.selectedZipPath != null && !picker.isLoading && picker.error == null &&
+                        !state.isBusy,
                     minWidth = 88.dp,
                     minHeight = ACTION_BUTTON_HEIGHT,
                     cornerRadius = ACTION_BUTTON_HEIGHT / 2,
@@ -202,7 +226,7 @@ private fun BreadcrumbHeader(
         val parent = picker.parentPath()
         IconButton(
             onClick = { parent?.let(onBrowseDirectory) ?: onCancel() },
-            enabled = !picker.isAtStorageRoot,
+            enabled = !picker.isAtStorageRoot && !picker.isLoading,
             modifier = Modifier.size(40.dp),
         ) {
             Icon(
@@ -219,32 +243,74 @@ private fun BreadcrumbHeader(
         ) {
             val paths = picker.breadcrumbPaths()
             paths.forEachIndexed { index, path ->
-                if (index > 0) {
-                    Text("›", color = colorScheme.onSurfaceVariantSummary, fontSize = 18.sp)
-                }
                 val isCurrent = index == paths.lastIndex
                 val label = if (index == 0) {
                     stringResource(Res.string.driver_picker_storage_root)
                 } else {
                     path.substringAfterLast('/')
                 }
+                val interactionSource = remember(path) { MutableInteractionSource() }
+                val isHovered by interactionSource.collectIsHoveredAsState()
+                val isPressed by interactionSource.collectIsPressedAsState()
+                val background = driverPathInteractionHighlight(
+                    isHovered = isHovered,
+                    isPressed = isPressed,
+                    onSurface = colorScheme.onSurface,
+                )
                 Box(
                     Modifier.defaultMinSize(minHeight = BREADCRUMB_TOUCH_HEIGHT)
-                        .clickable(role = Role.Button) { onBrowseDirectory(path) }
+                        .clip(RoundedCornerShape(PATH_ROW_CORNER_RADIUS))
+                        .background(background)
+                        .hoverable(interactionSource)
+                        .clickable(
+                            interactionSource = interactionSource,
+                            role = Role.Button,
+                        ) { onBrowseDirectory(path) }
                         .padding(horizontal = 4.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        label,
-                        color = if (isCurrent) colorScheme.onSurface else colorScheme.onSurfaceVariantSummary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                    val textStyle = driverPickerBreadcrumbTextStyle(
+                        isCurrent = isCurrent,
+                        onSurface = colorScheme.onSurface,
+                        onSurfaceVariant = colorScheme.onSurfaceVariantSummary,
                     )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            label,
+                            style = textStyle,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (!isCurrent) {
+                            Spacer(Modifier.width(4.dp))
+                            Icon(
+                                imageVector = Icons.Outlined.ChevronRight,
+                                contentDescription = null,
+                                tint = colorScheme.onSurfaceVariantSummary,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                    }
                 }
             }
         }
     }
 }
+
+internal fun driverPickerBreadcrumbTextStyle(
+    isCurrent: Boolean,
+    onSurface: Color,
+    onSurfaceVariant: Color,
+): TextStyle = TextStyle(
+    color = if (isCurrent) onSurface else onSurfaceVariant,
+    textDecoration = TextDecoration.None,
+)
+
+internal fun driverPathInteractionHighlight(
+    isHovered: Boolean,
+    isPressed: Boolean,
+    onSurface: Color,
+): Color = if (isHovered || isPressed) onSurface.copy(alpha = 0.08f) else Color.Transparent
 
 @Composable
 private fun DriverPathRow(
@@ -260,7 +326,11 @@ private fun DriverPathRow(
     val isHovered by interactionSource.collectIsHoveredAsState()
     val isPressed by interactionSource.collectIsPressedAsState()
     val shape = RoundedCornerShape(PATH_ROW_CORNER_RADIUS)
-    val highlight = if (isHovered || isPressed) colorScheme.onSurface.copy(alpha = 0.08f) else Color.Transparent
+    val highlight = driverPathInteractionHighlight(
+        isHovered = isHovered,
+        isPressed = isPressed,
+        onSurface = colorScheme.onSurface,
+    )
 
     Row(
         modifier = modifier.fillMaxWidth()
