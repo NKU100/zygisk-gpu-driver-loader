@@ -152,6 +152,20 @@ class DriversUiStateTest {
     }
 
     @Test
+    fun pickerBreadcrumbTargetsIncludeRootAndEachNestedDirectory() {
+        val picker = DriverZipPickerState(path = "/storage/emulated/0/Download/GPU Drivers")
+
+        assertEquals(
+            listOf(
+                "/storage/emulated/0",
+                "/storage/emulated/0/Download",
+                "/storage/emulated/0/Download/GPU Drivers",
+            ),
+            picker.breadcrumbPaths(),
+        )
+    }
+
+    @Test
     fun pickerErrorStateRetainsCurrentPathForRetry() {
         val failed = DriverZipPickerState().open().failed(DriverPathError.ACCESS_DENIED)
 

@@ -24,6 +24,18 @@ data class DriverZipPickerState(
     val isAtStorageRoot: Boolean get() = path == STORAGE_ROOT
     val selectedZipPath: String? get() = selectedFileName?.let { "$path/$it" }
 
+    fun breadcrumbPaths(): List<String> {
+        if (!isSafeDirectoryPath(path)) return listOf(STORAGE_ROOT)
+        val segments = path.removePrefix(STORAGE_ROOT).split('/').filter(String::isNotEmpty)
+        val paths = mutableListOf(STORAGE_ROOT)
+        var current = STORAGE_ROOT
+        segments.forEach { segment ->
+            current = "$current/$segment"
+            paths += current
+        }
+        return paths
+    }
+
     fun open(): DriverZipPickerState = copy(
         isOpen = true,
         path = DOWNLOADS_PATH,
