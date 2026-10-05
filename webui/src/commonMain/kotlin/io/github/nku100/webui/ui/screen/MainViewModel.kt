@@ -62,6 +62,9 @@ data class MainUiState(
     val moduleAuthor: String = "",
 )
 
+internal fun MainUiState.beginFetch(): MainUiState =
+    copy(isLoading = true)
+
 @OptIn(FlowPreview::class)
 class MainViewModel : ViewModel() {
 
@@ -87,7 +90,7 @@ class MainViewModel : ViewModel() {
     }
 
     private suspend fun fetchData() {
-        _uiState.update { it.copy(isLoading = true, rootEnvironment = null) }
+        _uiState.update { it.beginFetch() }
         try {
             val environment = RootAccess.environment()
             _uiState.update { it.copy(rootEnvironment = environment) }
