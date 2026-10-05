@@ -376,17 +376,34 @@ class MainViewModel : ViewModel() {
         }
     }
 
-    fun deleteDriver(driverId: String): Job = viewModelScope.launch {
+    fun deleteDriver(driverId: String, resetBindings: Boolean = false): Job = viewModelScope.launch {
         val current = _uiState.value.drivers
-        if (current.isBusy || current.isBound(driverId, _uiState.value.config)) return@launch
-        _uiState.update { it.copy(drivers = current.copy(isBusy = true, importError = null, importedDriver = null, deleteError = null)) }
+        if (current.isBusy || (!resetBindings && current.isBound(driverId, _uiState.value.config))) return@launch
+        _uiState.update {
+            it.copy(drivers = current.copy(
+                isBusy = true,
+                importError = null,
+                importedDriver = null,
+                deleteError = null,
+                deleteResetCount = 0,
+            ))
+        }
         try {
-            when (val result = DriverRepository.deleteDriver(driverId)) {
+            val outcome = DriverRepository.deleteDriver(driverId, resetBindings)
+            outcome.updatedConfig?.let { newConfig ->
+                _uiState.update { it.copy(config = newConfig, themeMode = resolveThemeMode(newConfig)) }
+            }
+            when (val result = outcome.result) {
                 DriverDeleteResult.DELETED -> {
                     _uiState.update { it.copy(drivers = it.drivers.afterSuccessfulDelete(driverId)) }
                     refreshDriverList()
                 }
-                else -> _uiState.update { it.copy(drivers = it.drivers.copy(deleteError = result)) }
+                else -> _uiState.update {
+                    it.copy(drivers = it.drivers.copy(
+                        deleteError = result,
+                        deleteResetCount = outcome.resetPackageNames.size,
+                    ))
+                }
             }
         } catch (e: CancellationException) {
             throw e

@@ -9,8 +9,16 @@ import io.github.nku100.webui.data.DriverPathEntry
 import io.github.nku100.webui.data.DriverPathError
 import io.github.nku100.webui.data.ModuleConfig
 import io.github.nku100.webui.data.PackageSettings
+import io.github.nku100.webui.platform.PackageInfo
 
 enum class DriverListStatus { LOADING, FRESH, UNAVAILABLE, STALE }
+
+@Immutable
+data class DriverAppBinding(
+    val packageName: String,
+    val label: String,
+    val isModuleEnabled: Boolean,
+)
 
 @Immutable
 data class DriverZipPickerState(
@@ -105,6 +113,7 @@ data class DriversUiState(
     val importError: DriverArchiveError? = null,
     val importedDriver: DriverInfo? = null,
     val deleteError: DriverDeleteResult? = null,
+    val deleteResetCount: Int = 0,
     val zipPicker: DriverZipPickerState = DriverZipPickerState(),
 ) {
     val showEmptyState: Boolean get() = listStatus == DriverListStatus.FRESH && drivers.isEmpty()
@@ -134,6 +143,7 @@ data class DriversUiState(
         drivers = drivers.filterNot { it.driverId == driverId },
         listStatus = DriverListStatus.STALE,
         deleteError = null,
+        deleteResetCount = 0,
     )
 }
 
@@ -145,4 +155,20 @@ fun ModuleConfig.withPackageDriver(
     if (driverId.isNotEmpty() && installedDrivers.none { it.driverId == driverId }) return null
     val settings = packageSettings[packageName] ?: PackageSettings()
     return copy(packageSettings = packageSettings + (packageName to settings.copy(driverId = driverId)))
+}
+
+fun ModuleConfig.driverBindings(driverId: String, packages: List<PackageInfo>): List<DriverAppBinding> {
+    val installedPackages = packages.associateBy { it.packageName }
+    return packageSettings.asSequence()
+        .filter { (_, settings) -> settings.driverId == driverId }
+        .map { (packageName, _) ->
+            val packageInfo = installedPackages[packageName]
+            DriverAppBinding(
+                packageName = packageName,
+                label = packageInfo?.label?.ifBlank { packageName } ?: packageName,
+                isModuleEnabled = enabled && packageName in targetPackages,
+            )
+        }
+        .sortedWith(compareBy<DriverAppBinding> { it.label.lowercase() }.thenBy { it.packageName })
+        .toList()
 }

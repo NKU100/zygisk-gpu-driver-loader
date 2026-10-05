@@ -7,6 +7,7 @@ import io.github.nku100.webui.data.DriverPathEntry
 import io.github.nku100.webui.data.DriverPathError
 import io.github.nku100.webui.data.ModuleConfig
 import io.github.nku100.webui.data.PackageSettings
+import io.github.nku100.webui.platform.PackageInfo
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -52,6 +53,28 @@ class DriversUiStateTest {
 
         assertTrue(DriversUiState(drivers = listOf(installed)).isBound("driver-a", config))
         assertFalse(DriversUiState(drivers = listOf(installed)).isBound("other", config))
+    }
+
+    @Test
+    fun driverBindingsIncludeInactiveAndUninstalledPackages() {
+        val config = ModuleConfig(
+            targetPackages = listOf("app.active"),
+            packageSettings = mapOf(
+                "app.inactive" to PackageSettings(driverId = "driver-a"),
+                "app.active" to PackageSettings(driverId = "driver-a"),
+                "app.removed" to PackageSettings(driverId = "driver-a"),
+                "app.other" to PackageSettings(driverId = "driver-b"),
+            ),
+        )
+
+        val bindings = config.driverBindings(
+            "driver-a",
+            listOf(PackageInfo("app.active", "Active app"), PackageInfo("app.inactive", "Inactive app")),
+        )
+
+        assertEquals(listOf("Active app", "app.removed", "Inactive app"), bindings.map { it.label })
+        assertEquals(listOf(true, false, false), bindings.map { it.isModuleEnabled })
+        assertEquals(emptyList(), config.driverBindings("driver-c", emptyList()))
     }
 
     @Test

@@ -27,6 +27,12 @@ data class DriverRecord(
 
 enum class DriverDeleteResult { DELETED, BOUND, NOT_FOUND, INVALID_ID, IO_ERROR }
 
+data class DriverDeleteOutcome(
+    val result: DriverDeleteResult,
+    val updatedConfig: ModuleConfig? = null,
+    val resetPackageNames: List<String> = emptyList(),
+)
+
 internal class DriverStoreException(val code: DriverArchiveError) : Exception(code.name)
 internal typealias RootCommand = suspend (String) -> ShellResult
 
@@ -365,7 +371,14 @@ object DriverRepository {
 
     suspend fun listDrivers(): List<DriverInfo> = PlatformBridge.listDrivers()
 
-    suspend fun deleteDriver(driverId: String): DriverDeleteResult = PlatformBridge.deleteDriver(driverId)
+    suspend fun deleteDriver(driverId: String, resetBindings: Boolean = false): DriverDeleteOutcome =
+        if (resetBindings) deleteStoredAndResetBindings(driverId)
+        else DriverDeleteOutcome(PlatformBridge.deleteDriver(driverId))
+
+    internal suspend fun deleteStoredAndResetBindings(
+        driverId: String,
+        execute: RootCommand = PlatformBridge::exec,
+    ): DriverDeleteOutcome = deleteStoredInternal(driverId, execute, resetBindings = true)
 
     internal fun canDelete(driverId: String, config: ModuleConfig): Boolean =
         config.packageSettings.values.none { it.driverId == driverId }
@@ -393,17 +406,41 @@ object DriverRepository {
     internal suspend fun deleteStored(
         driverId: String,
         execute: RootCommand = PlatformBridge::exec,
-    ): DriverDeleteResult {
-        if (!idPattern.matches(driverId)) return DriverDeleteResult.INVALID_ID
+    ): DriverDeleteResult = deleteStoredInternal(driverId, execute, resetBindings = false).result
+
+    private suspend fun deleteStoredInternal(
+        driverId: String,
+        execute: RootCommand,
+        resetBindings: Boolean,
+    ): DriverDeleteOutcome {
+        if (!idPattern.matches(driverId)) return DriverDeleteOutcome(DriverDeleteResult.INVALID_ID)
         return RepositoryMutationGuard.mutate {
+            var updatedConfig: ModuleConfig? = null
+            var resetPackageNames: List<String> = emptyList()
             try {
                 val configPath = ConfigRepository.configPath
                 val configResult = checked("if [ -f ${quote(configPath)} ]; then cat ${quote(configPath)}; fi", execute)
                 val config = if (configResult.stdout.isBlank()) ModuleConfig() else
                     json.decodeFromString<ModuleConfig>(configResult.stdout)
-                if (!canDelete(driverId, config)) return@mutate DriverDeleteResult.BOUND
+                val boundPackageNames = config.packageSettings
+                    .filterValues { it.driverId == driverId }
+                    .keys
+                    .sorted()
+                if (boundPackageNames.isNotEmpty() && !resetBindings) {
+                    return@mutate DriverDeleteOutcome(DriverDeleteResult.BOUND)
+                }
                 val records = readIndex(execute)
-                if (records.none { it.driverId == driverId }) return@mutate DriverDeleteResult.NOT_FOUND
+                if (records.none { it.driverId == driverId }) {
+                    return@mutate DriverDeleteOutcome(DriverDeleteResult.NOT_FOUND)
+                }
+                if (boundPackageNames.isNotEmpty()) {
+                    val newConfig = config.copy(packageSettings = config.packageSettings.mapValues { (_, settings) ->
+                        if (settings.driverId == driverId) settings.copy(driverId = "") else settings
+                    })
+                    ConfigRepository.saveWithinMutation(newConfig, execute)
+                    updatedConfig = newConfig
+                    resetPackageNames = boundPackageNames
+                }
                 val directory = "$root/$driverId"
                 val trash = "$root/.delete-${nonce()}"
                 val preparedIndex = prepareIndex(records.filterNot { it.driverId == driverId }, execute)
@@ -416,12 +453,14 @@ object DriverRepository {
                         throw e
                     }
                     checked("rm -rf ${quote(trash)}", execute)
-                    DriverDeleteResult.DELETED
+                    DriverDeleteOutcome(DriverDeleteResult.DELETED, updatedConfig, resetPackageNames)
                 } finally {
-                    execute("rm -f ${quote(preparedIndex)}")
+                    runCatching { execute("rm -f ${quote(preparedIndex)}") }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
-                DriverDeleteResult.IO_ERROR
+                DriverDeleteOutcome(DriverDeleteResult.IO_ERROR, updatedConfig, resetPackageNames)
             }
         }
     }

@@ -80,6 +80,7 @@ fun App() {
                         DriversPage(
                             state = uiState.drivers,
                             config = uiState.config,
+                            packages = uiState.packages,
                             onBack = { navigator.pop() },
                             onOpenZipPicker = { viewModel.openDriverZipPicker() },
                             onBrowseZipDirectory = { viewModel.browseDriverZipDirectory(it) },
@@ -87,7 +88,7 @@ fun App() {
                             onRetryZipDirectory = { viewModel.retryDriverZipDirectory() },
                             onCancelZipPicker = { viewModel.closeDriverZipPicker() },
                             onImportSelectedZip = { viewModel.importSelectedDriverZip() },
-                            onDelete = { viewModel.deleteDriver(it) },
+                            onDelete = { driverId, resetBindings -> viewModel.deleteDriver(driverId, resetBindings) },
                             onRetryList = { viewModel.refreshDrivers() },
                             bottomPadding = io.github.nku100.webui.platform.navigationBarBottomPadding(),
                             enableBlur = uiState.config.enableBlur,

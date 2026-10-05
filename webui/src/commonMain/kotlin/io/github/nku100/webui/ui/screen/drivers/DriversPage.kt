@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.add
 import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,6 +18,8 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedButton
@@ -38,6 +41,7 @@ import io.github.nku100.webui.data.DriverDeleteResult
 import io.github.nku100.webui.data.DriverInfo
 import io.github.nku100.webui.data.DriverPathEntry
 import io.github.nku100.webui.data.ModuleConfig
+import io.github.nku100.webui.platform.PackageInfo
 import io.github.nku100.webui.ui.util.rememberDefaultBlurBackdrop
 import io.github.nku100.webui.ui.util.topBarDefaultWindowInsetsPadding
 import io.github.nku100.webui.ui.util.topBarModifier
@@ -66,6 +70,7 @@ import zygisk_module_webui_template.webui.generated.resources.*
 fun DriversPage(
     state: DriversUiState,
     config: ModuleConfig,
+    packages: List<PackageInfo> = emptyList(),
     onBack: () -> Unit,
     onOpenZipPicker: () -> Unit,
     onBrowseZipDirectory: (String) -> Unit,
@@ -73,7 +78,7 @@ fun DriversPage(
     onRetryZipDirectory: () -> Unit,
     onCancelZipPicker: () -> Unit,
     onImportSelectedZip: () -> Unit,
-    onDelete: (String) -> Unit,
+    onDelete: (String, Boolean) -> Unit,
     onRetryList: () -> Unit,
     bottomPadding: Dp,
     enableBlur: Boolean,
@@ -152,7 +157,13 @@ fun DriversPage(
                     }
                 }
                 state.deleteError?.let { error ->
-                    item { Text(deleteErrorText(error), modifier = Modifier.padding(horizontal = 24.dp), color = colorScheme.error) }
+                    item {
+                        Text(
+                            deleteErrorText(error, state.deleteResetCount),
+                            modifier = Modifier.padding(horizontal = 24.dp),
+                            color = colorScheme.error,
+                        )
+                    }
                 }
                 item { SmallTitle(text = stringResource(Res.string.installed_drivers)) }
                 if (state.showEmptyState) {
@@ -168,7 +179,7 @@ fun DriversPage(
             }
 
             selectedDriver?.let { driver ->
-                val bound = state.isBound(driver.driverId, config)
+                val bound = config.driverBindings(driver.driverId, packages).isNotEmpty()
                 OverlayDialog(
                     title = driver.name,
                     show = true,
@@ -184,11 +195,11 @@ fun DriversPage(
                         )
                         DetailLine(stringResource(Res.string.driver_hash), driver.archiveSha256.take(12).ifEmpty { stringResource(Res.string.driver_unknown) })
                         if (bound) {
-                            Text(stringResource(Res.string.driver_bound_cannot_delete), fontSize = 13.sp, color = colorScheme.onSurfaceVariantSummary)
+                            Text(stringResource(Res.string.driver_bound_will_reset), fontSize = 13.sp, color = colorScheme.onSurfaceVariantSummary)
                         }
                         OutlinedButton(
                             modifier = Modifier.fillMaxWidth().height(48.dp).testTag("driver-delete-entry"),
-                            enabled = !bound && !state.isBusy,
+                            enabled = !state.isBusy,
                             onClick = { selectedDriverId = null; confirmDeleteId = driver.driverId },
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = colorScheme.error),
                             border = BorderStroke(1.dp, colorScheme.error),
@@ -202,20 +213,50 @@ fun DriversPage(
             }
 
             pendingDelete?.let { driver ->
+                val bindings = config.driverBindings(driver.driverId, packages)
+                val resetBindings = bindings.isNotEmpty()
                 OverlayDialog(
                     title = stringResource(Res.string.delete_driver),
                     show = true,
                     onDismissRequest = { confirmDeleteId = null },
                 ) {
                     Column {
-                        Text(stringResource(Res.string.confirm_delete_driver, driver.name))
+                        Text(
+                            when {
+                                bindings.size == 1 -> stringResource(
+                                    Res.string.confirm_delete_driver_with_reset_one,
+                                    driver.name,
+                                )
+                                resetBindings -> stringResource(
+                                    Res.string.confirm_delete_driver_with_reset_many,
+                                    driver.name,
+                                    bindings.size,
+                                )
+                                else -> stringResource(Res.string.confirm_delete_driver, driver.name)
+                            },
+                        )
+                        if (resetBindings) {
+                            Column(
+                                modifier = Modifier
+                                    .heightIn(max = 240.dp)
+                                    .verticalScroll(rememberScrollState())
+                                    .padding(top = 12.dp, bottom = 4.dp),
+                            ) {
+                                bindings.forEach { binding ->
+                                    DriverBindingItem(binding)
+                                }
+                            }
+                        }
                         TextButton(
                             modifier = Modifier.fillMaxWidth().height(48.dp).testTag("driver-delete-confirm"),
-                            onClick = { confirmDeleteId = null; onDelete(driver.driverId) },
-                            enabled = !state.isBusy && !state.isBound(driver.driverId, config),
+                            onClick = { confirmDeleteId = null; onDelete(driver.driverId, resetBindings) },
+                            enabled = !state.isBusy,
                             colors = ButtonDefaults.textButtonColors(contentColor = colorScheme.error),
                         ) {
-                            Text(stringResource(Res.string.delete_driver), color = colorScheme.error)
+                            Text(
+                                stringResource(if (resetBindings) Res.string.driver_delete_and_reset else Res.string.delete_driver),
+                                color = colorScheme.error,
+                            )
                         }
                         Spacer(Modifier.height(8.dp))
                         OutlinedButton(
@@ -239,6 +280,20 @@ fun DriversPage(
                 onImport = onImportSelectedZip,
             )
         }
+    }
+}
+
+@Composable
+private fun DriverBindingItem(binding: DriverAppBinding) {
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+        Text(binding.label, fontSize = 14.sp)
+        Text(binding.packageName, fontSize = 12.sp, color = colorScheme.onSurfaceVariantSummary)
+        Text(
+            modifier = Modifier.testTag("driver-binding-status-${binding.packageName}"),
+            text = stringResource(if (binding.isModuleEnabled) Res.string.driver_binding_enabled else Res.string.driver_binding_disabled),
+            fontSize = 12.sp,
+            color = colorScheme.onSurfaceVariantSummary,
+        )
     }
 }
 
@@ -274,7 +329,10 @@ private fun importErrorText(error: DriverArchiveError): String = when (error) {
 }
 
 @Composable
-private fun deleteErrorText(error: DriverDeleteResult): String = when (error) {
+private fun deleteErrorText(error: DriverDeleteResult, resetCount: Int): String = if (resetCount > 0) {
+    if (resetCount == 1) stringResource(Res.string.driver_delete_error_after_reset_one)
+    else stringResource(Res.string.driver_delete_error_after_reset_many, resetCount)
+} else when (error) {
     DriverDeleteResult.BOUND -> stringResource(Res.string.driver_bound_cannot_delete)
     DriverDeleteResult.NOT_FOUND -> stringResource(Res.string.driver_not_found)
     DriverDeleteResult.INVALID_ID, DriverDeleteResult.IO_ERROR -> stringResource(Res.string.driver_delete_error)

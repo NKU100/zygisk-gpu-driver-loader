@@ -261,6 +261,80 @@ class DriverRepositoryMutationTest {
     }
 
     @Test
+    fun deleteWithResetClearsEveryBindingAndPreservesOtherPackageSettings() {
+        val shell = InMemoryRootShell()
+        val imported = assertIs<DriverImportResult.Accepted>(completed { publish(shell, 'a', 1L) })
+        val original = ModuleConfig(
+            enabled = false,
+            targetPackages = listOf("example.active"),
+            packageSettings = mapOf(
+                "example.active" to PackageSettings(driverId = imported.driver.driverId, logLevel = "DEBUG", note = "active"),
+                "example.inactive" to PackageSettings(driverId = imported.driver.driverId, logTag = "trace"),
+                "example.other" to PackageSettings(driverId = "other-driver", note = "untouched"),
+            ),
+        )
+        shell.files[ModuleInfo.CONFIG_PATH] = Json.encodeToString(original).encodeToByteArray()
+
+        val outcome = completed {
+            DriverRepository.deleteStoredAndResetBindings(imported.driver.driverId, shell::exec)
+        }
+
+        val expected = original.copy(packageSettings = original.packageSettings.mapValues { (_, settings) ->
+            if (settings.driverId == imported.driver.driverId) settings.copy(driverId = "") else settings
+        })
+        assertEquals(DriverDeleteResult.DELETED, outcome.result)
+        assertEquals(setOf("example.active", "example.inactive"), outcome.resetPackageNames.toSet())
+        assertEquals(expected, outcome.updatedConfig)
+        assertEquals(expected, Json.decodeFromString<ModuleConfig>(shell.text(ModuleInfo.CONFIG_PATH)))
+        assertTrue(shell.index().isEmpty())
+    }
+
+    @Test
+    fun failedConfigWriteAbortsDeleteAndKeepsBindings() {
+        val shell = InMemoryRootShell()
+        val imported = assertIs<DriverImportResult.Accepted>(completed { publish(shell, 'a', 1L) })
+        val original = ModuleConfig(packageSettings = mapOf(
+            "example.app" to PackageSettings(driverId = imported.driver.driverId),
+        ))
+        shell.files[ModuleInfo.CONFIG_PATH] = Json.encodeToString(original).encodeToByteArray()
+        shell.failOn = { it.startsWith("mv ") && it.endsWith("'${ModuleInfo.CONFIG_PATH}'") }
+
+        val outcome = completed {
+            DriverRepository.deleteStoredAndResetBindings(imported.driver.driverId, shell::exec)
+        }
+
+        assertEquals(DriverDeleteResult.IO_ERROR, outcome.result)
+        assertEquals(emptyList(), outcome.resetPackageNames)
+        assertEquals(null, outcome.updatedConfig)
+        assertEquals(original, Json.decodeFromString<ModuleConfig>(shell.text(ModuleInfo.CONFIG_PATH)))
+        assertEquals(listOf(imported.driver.driverId), shell.index().map { it.driverId })
+    }
+
+    @Test
+    fun failedDriverRemovalKeepsSuccessfulSystemDriverResetVisible() {
+        val shell = InMemoryRootShell()
+        val imported = assertIs<DriverImportResult.Accepted>(completed { publish(shell, 'a', 1L) })
+        val original = ModuleConfig(packageSettings = mapOf(
+            "example.app" to PackageSettings(driverId = imported.driver.driverId, note = "keep"),
+        ))
+        shell.files[ModuleInfo.CONFIG_PATH] = Json.encodeToString(original).encodeToByteArray()
+        shell.failOn = { it.startsWith("mv ") && it.endsWith("'${shell.root}/index.json'") }
+
+        val outcome = completed {
+            DriverRepository.deleteStoredAndResetBindings(imported.driver.driverId, shell::exec)
+        }
+
+        val updated = original.copy(packageSettings = mapOf(
+            "example.app" to PackageSettings(note = "keep"),
+        ))
+        assertEquals(DriverDeleteResult.IO_ERROR, outcome.result)
+        assertEquals(listOf("example.app"), outcome.resetPackageNames)
+        assertEquals(updated, outcome.updatedConfig)
+        assertEquals(updated, Json.decodeFromString<ModuleConfig>(shell.text(ModuleInfo.CONFIG_PATH)))
+        assertEquals(listOf(imported.driver.driverId), shell.index().map { it.driverId })
+    }
+
+    @Test
     fun failedConfigRenamePreservesPreviouslyPublishedConfig() {
         val shell = InMemoryRootShell()
         val original = ModuleConfig(enabled = false)

@@ -100,7 +100,15 @@
     <string name="driver_storage_error">Import failed while reading or saving the ZIP</string>
     <string name="driver_unsupported_abi">This driver does not support arm64-v8a</string>
     <string name="driver_invalid_zip">Invalid driver ZIP or metadata</string>
-    <string name="driver_bound_cannot_delete">Assigned to an app. Select the system driver there before deleting.</string>
+    <string name="driver_bound_cannot_delete">Driver is still selected by an app and was not deleted.</string>
+    <string name="driver_bound_will_reset">Assigned apps will be switched to the system driver before deletion.</string>
+    <string name="confirm_delete_driver_with_reset_one">Delete %1$s and switch the assigned app to the system driver?</string>
+    <string name="confirm_delete_driver_with_reset_many">Delete %1$s and switch %2$d assigned apps to the system driver?</string>
+    <string name="driver_binding_enabled">Module enabled</string>
+    <string name="driver_binding_disabled">Module not enabled</string>
+    <string name="driver_delete_and_reset">Switch to system driver &amp; delete</string>
+    <string name="driver_delete_error_after_reset_one">The app was switched to the system driver, but driver deletion did not complete. Refresh the list and try again.</string>
+    <string name="driver_delete_error_after_reset_many">%1$d apps were switched to the system driver, but driver deletion did not complete. Refresh the list and try again.</string>
     <string name="driver_not_found">Driver no longer exists</string>
     <string name="driver_delete_error">Could not delete driver</string>
     <string name="driver_library">Library</string>
