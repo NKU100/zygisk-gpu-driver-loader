@@ -1,19 +1,22 @@
 # Zygisk GPU Driver Loader 使用指南
 
-本模块为指定应用的 Vulkan 请求加载自定义 Adreno 驱动，不修改系统或 vendor 驱动文件。第一版使用本地 ZIP；模块不附带 GPU 驱动，也没有在线下载功能。
+本模块为指定应用的 Vulkan 请求加载自定义 Adreno 驱动。模块使用本地 ZIP，不附带驱动，也没有在线下载功能。
 
-## 环境要求
+## 环境与兼容性
 
-- 使用 Adreno GPU 的 Android 设备，目标应用必须是 64 位 ARM 进程。
-- Magisk 或 KernelSU，以及可用的 Zygisk 实现。KernelSU 本身不提供 Zygisk，需要另行配置。
-- 目标应用使用系统 Vulkan loader。OpenGL ES 驱动替换不在第一版范围内；自行加载私有 Vulkan 实现的应用不保证可拦截。
-- 选择适合设备 GPU 和 Android 版本的驱动。能导入不代表驱动能运行，能加载也不代表渲染稳定。
+- Android 9 或更新版本，Qualcomm Adreno GPU，目标应用为 64 位 ARM 进程。
+- 使用 Magisk 或 KernelSU，并启用可用的 Zygisk 实现。KernelSU 本身不提供 Zygisk。
+- 目标应用通过系统 Vulkan loader 加载驱动。自行加载私有 Vulkan 实现的应用不保证可拦截。
+- OpenGL ES、32 位应用、x86、RISC-V 和非 Adreno GPU 不支持自定义驱动加载。模块包含这些 ABI 的基础库，不代表它们支持换驱动。
+- 驱动需要匹配 GPU 型号及 Android 版本。导入器校验格式和完整性，不判断驱动的全部硬件兼容性。
 
-原生模块虽然打包多种 ABI，自定义驱动加载仅在 `arm64-v8a` 路径启用。不能据此认为支持 32 位、x86、Mali 或其他 GPU。
+已有验证覆盖 Redmi 23117RK66C、Android API 36、Adreno 750、KernelSU / Zygisk Next 上的 Unity Vulkan 场景和独立 Vulkan 探针。探针完成了设备创建、队列提交及缓冲区回读，Unity 场景使用了私有 Turnip 驱动并显示画面。
 
-## 驱动要求什么格式
+这些结果不能推广到全部设备、应用和驱动。Unity 验证中仍观察到扩展启用依赖错误，因此不宣称完整 VRS 功能通过。DevCheck 的自定义驱动场景曾出现闪退，不列为已验证兼容应用。Magisk 模拟器验证过模块安装、配置界面和不适用设备的安全退出，未验证 Adreno 驱动运行。
 
-使用 AdrenoTools 风格的原始 ZIP，不需要为了本模块重新打包。解压后应包含根目录 `meta.json`、其中 `libraryName` 指定的主库，以及驱动需要的根目录 `.so` 依赖库：
+## 驱动包格式
+
+使用 AdrenoTools 风格的原始 ZIP，无需为本模块重新打包。ZIP 根目录应包含：
 
 ```text
 meta.json
@@ -21,151 +24,65 @@ vulkan.adreno.so
 dependency.so        # 可选，文件名由驱动包决定
 ```
 
-最小元数据示例：
+元数据中的 `libraryName` 必须指向根目录中的主库，例如：
 
 ```json
 {"name":"自定义驱动","libraryName":"vulkan.adreno.so"}
 ```
 
-`abi` 字段可以省略。导入器实际检查主库和每个依赖库的 ELF 头，要求 ARM64、小端、64 位共享库；声明 `abi` 不能绕过检查。主库与依赖库都必须位于 ZIP 根目录，符号链接、路径穿越、重名库和嵌套库会被拒绝。驱动库最多 128 个；ZIP 和发布文件总量各不超过 512 MiB，元数据不超过 64 KiB。
+`abi` 字段可以省略。导入器实际检查主库和每个依赖库的 ELF 头，要求 ARM64、小端、64 位共享库。主库与依赖库必须位于 ZIP 根目录；符号链接、路径穿越、重名库和嵌套库会被拒绝。
 
-导入后保留元数据和驱动库原始字节，存放在 root 管理的模块数据目录。应用启动时再校验并暂存到自己的私有目录，不从下载目录直接执行库，也不改动系统 Vulkan loader 文件。
+驱动库最多 128 个；ZIP 和发布文件总量各不超过 512 MiB，元数据不超过 64 KiB。导入后保留元数据和驱动库的原始字节，不修改 SONAME。
 
-同一个 ZIP 重复导入会复用原记录，并核对元数据、主库和全部依赖库的哈希。已存文件缺失或内容不符时导入失败，不会静默覆盖或修复旧记录。
+同一个 ZIP 重复导入会复用原记录，并核对元数据、主库及全部依赖库的哈希。已存文件缺失或内容不符时会报错，不会静默覆盖旧记录。导入失败保留已有驱动和应用绑定。
 
 ## 安装与配置
 
-1. 在 KernelSU 或 Magisk 管理器安装模块 ZIP，然后重启设备。覆盖安装同样需要重启才能切换已注入的原生代码。
-2. KernelSU 用户从模块页面打开 WebUI；Magisk 用户使用配套配置 APK `io.github.nku100.gpudriver`，并授予所需 root 权限。
-3. 在“设置 → GPU 驱动”中选择“导入驱动 ZIP”，选择本地原始驱动包。确认驱动出现在列表中。
-4. 在“应用”页面打开目标应用，启用该应用的模块作用开关，在“此应用使用的驱动”中选择刚导入的驱动，并确保模块总开关开启。
-5. 重启目标应用。选择变化不会替换已经运行的进程中的驱动；该选择也适用于该包的其他进程，例如 `:remote`。
-6. 检查模块日志和应用实际渲染结果。发生崩溃、黑屏或图形异常时切回系统驱动，不要只凭列表中的名称判断成功。
+1. 在 KernelSU 或 Magisk 管理器安装模块 ZIP，然后重启设备。覆盖安装也需要重启，才能切换已注入的原生代码。
+2. 从 KernelSU 模块页面打开 WebUI；Magisk 用户可使用 KsuWebUIStandalone，或自行构建配置 APK `io.github.nku100.gpudriver`。给界面宿主授予 root 权限。
+3. 打开“设置 → GPU 驱动 → 导入驱动 ZIP”。APK 和 WebUI 使用同一个本地文件浏览器；进入文件所在目录，选中 ZIP 并确认导入。当前不提供系统文件选择器或云盘来源。
+4. 在“应用”页面打开目标应用，启用该应用的模块作用开关，在驱动选择中选中导入的驱动，并确保模块总开关开启。
+5. 重启目标应用。选择变化不会替换已运行进程中的驱动；选择也适用于同包其他进程，例如 `:remote`。
+6. 检查模块日志及实际渲染结果。列表中显示驱动名称只代表配置选择。
 
-驱动详情提供删除操作。已分配给应用的驱动不能删除，应先在所有绑定应用中切换为系统驱动。
+驱动存储在 root 管理的模块数据目录；应用启动时校验并暂存到自己的私有目录。模块不从下载目录直接执行库，不修改系统或 vendor 的驱动文件。
 
-## 日志与回退
+## 删除驱动
 
-模块数据位于 `/data/adb/zygisk_gpu_driver_loader/`，配置是 `config.json`，驱动索引是 `drivers/index.json`，持久日志是 `module.log`。优先通过配置 UI 操作，不要手工修改索引或驱动 ID。
+在驱动详情中选择删除。若驱动有应用绑定，确认界面会列出受影响的应用；确认后先将全部相关绑定切换为系统驱动，再删除驱动文件。未启用模块的应用和已卸载应用留下的绑定也会处理。
 
-- `HookInstalled`：已安装加载拦截，不代表驱动已经被请求或加载。
-- `Loaded`：返回的入口对应已校验的私有驱动文件，不代表图形管线或窗口渲染通过。
-- `SystemFallback`：本次加载使用系统驱动。
-- `InvalidDriver`：驱动或私有暂存校验失败，未按选择使用自定义驱动。
+保存配置失败时不会删除驱动。若绑定已重置但文件删除失败，界面会报告该结果，可以重试删除。应用作用开关和备注会保留。已经运行的应用仍需重启，才能使用系统驱动。
 
-正常回退方法是在应用配置中选择“系统驱动”，然后重启应用。关闭该应用的作用开关或模块总开关后，也要重启应用。配置 UI 无法打开时，可在 root 管理器禁用模块并重启设备；不要删除系统或 vendor 库。
+## 日志与排查
 
-自动回退处理的是驱动准备或加载失败。驱动已加载后发生的 GPU 崩溃、挂起或渲染错误，不保证能在同一进程里自动恢复为系统驱动。
+“日志”页面读取模块持久日志，支持刷新、搜索、按级别筛选和清空。页面筛选只改变显示内容，不控制 native 代码的输出级别。模块使用固定日志标签和级别，不提供按应用修改日志级别、标签或输出调用堆栈的选项。
 
-## 当前验证范围
+- `INFO`：hook 安装、驱动请求的成功结果。
+- `WARN`：准备或加载失败、系统驱动回退。
+- `DEBUG`：运行日志通道等内部诊断；部分底层细节只输出到 logcat。
 
-### 第一阶段验收对应关系
+关键状态含义：
 
-| 设计要求 | 已取得的证据 | 边界 |
-|---|---|---|
-| Debug 打包 | `ci-192-97111e0` 包含主模块、两个 arm64 helper 与许可证；实际安装脚本通过 | 包内不附带 GPU 驱动 |
-| 双端合法 ZIP 导入 | APK 与 KernelSU WebUI 通过系统选择器导入原始 Turnip，成功反馈、索引和库哈希一致 | 多依赖 Qualcomm 包另有主机逐文件字节比对 |
-| 异常 ZIP 拒绝 | 路径穿越、缺元数据、缺库和非 arm64 ELF 被拒绝；原索引和绑定保留 | 不声称所有损坏压缩格式均完成真机测试 |
-| 按应用加载 | Unity 绑定 Turnip 后持久记录加载路径及 `Loaded`；未选中的 DevCheck 只映射系统 Vulkan | Redmi API 36、Adreno 750、KernelSU / Zygisk Next |
-| Vulkan 可用 | 独立探针完成 instance、物理设备枚举、device、提交与回读；Unity 实际渲染 | Unity 的扩展依赖验证错误仍保留 |
-| 绑定驱动缺失回退 | 源目录移开后 Unity 使用系统驱动渲染，恢复后重新加载 Turnip | 不保证已加载驱动的 GPU 故障可进程内恢复 |
-| 不适用条件安全退出 | 无驱动目录、32 位翻译进程、非目标包、总开关关闭有真机证据；KGSL 缺失有 Magisk AVD 证据；未知和非 Adreno 型号有生产资格判断的主机测试 | 不代表其他 Android 版本、GPU 或 ABI 的运行兼容性 |
+| 状态 | 含义 |
+|---|---|
+| `HookInstalled` | 已安装加载拦截，驱动可能尚未被请求 |
+| `Loaded` | 返回入口来自已校验的私有驱动文件；不代表完整渲染成功 |
+| `SystemFallback` | 本次请求使用系统驱动 |
+| `InvalidDriver` | 驱动文件、ABI 或暂存校验失败 |
+| `UnsupportedDevice` | 设备资格检查未通过，跳过自定义驱动 |
 
-上述对应关系区分真机、模拟器与主机测试。以下记录保留各轮验收的具体条件；较早的性能观察不代表后来批量传输版本的耗时。
+持久日志达到约 512 KiB 后会裁剪并保留较新的约 256 KiB。上游依赖也会直接向 logcat 输出日志，因此 logcat 与“日志”页面的内容不完全相同。
 
-源码提交 `57b73dc` 的 Release 包 `ci-191-57b73dc` 已在下述 Redmi 设备覆盖安装并重启。Unity 新进程记录 `Loaded`，映射私有 Turnip 与 Release hook，棋盘场景正常渲染；配套 APK 和 KernelSU 正常入口的 WebUI 均显示新版本。配置、驱动索引和 Turnip 主库哈希与升级前一致，旧模块与配置保存在设备数据目录的 `validation-backup-ci191`。
+模块数据目录是 `/data/adb/zygisk_gpu_driver_loader/`，其中 `config.json` 保存设置，`drivers/index.json` 保存驱动索引，`module.log` 保存日志。日志可能包含应用包名和私有文件路径，分享前可先检查内容。
 
-在 Redmi 23117RK66C、Android API 36、Adreno 750、KernelSU 32601 / Zygisk Next 1.5.0 上，已验证正式模块加载用户已有的 Qualcomm 762.46 和原始 Turnip ZIP，检查了私有库映射，并通过 Vulkan 实例、设备、队列提交和 4096 字节缓冲区回读。原始多依赖 Qualcomm 757 包只验证了导入和整组暂存，没有执行其 GPU 请求。
+报告问题时请提供设备型号、Android 版本、GPU、root/Zygisk 版本、模块版本、驱动包版本、目标应用，以及对应启动时段的日志和实际症状。
 
-同一设备通过 `tango_translator` 运行仅包含 `armeabi-v7a` 库的独立探针 APK。为该包临时绑定已安装 Turnip 后，模块实际记录 `InvalidDriver`、原因 `unsupported ABI (requires arm64-v8a)`，未建立驱动私有目录或映射私有驱动及 helper。探针使用系统 32 位 Vulkan，完成实例创建、物理设备枚举、设备创建、队列提交、fence 等待及 4096 字节回读。测试后恢复原配置，配置与索引哈希未变。此结果覆盖该设备的 32 位翻译运行环境，不代表所有原生 32 位 zygote、x86 或 RISC-V 环境已验证。
+## 回退与升级
 
-KernelSU WebUI 已完成原始 Turnip ZIP 的系统文件选择、导入、列表与详情显示、为 `com.unity.vrsdemo.vulkan` 选择驱动及配置落盘。Unity 实际启动使用私有 Turnip 库，日志报告 `Loaded`、renderer 为 `Turnip Adreno (TM) 750`、版本为 `0x06463063`，窗口显示棋盘场景与几何体。
+选择“系统驱动”、关闭应用作用开关或关闭模块总开关后，都需要重启目标应用。配置界面不可用时，可以在 root 管理器禁用模块并重启设备；不要删除系统或 vendor 库。
 
-此轮真机验证发现应用既有 `files` 目录可能为 `0771`。暂存现在接受属主与属组匹配的 `0700` 或 `0771` 应用目录，不修改它的权限；模块自己的子目录仍要求 `0700`。
+自动回退处理的是驱动准备或加载失败。驱动已加载后发生的 GPU 崩溃、挂起或渲染错误，不保证能在同一进程里自动恢复。
 
-KernelSU WebUI 的已绑定驱动删除保护已验证：详情提示先解除应用绑定，点击删除不会进入确认页，驱动索引与绑定配置保留。通过 WebUI 切换为系统驱动并执行“重启应用”后，Unity 新进程映射 `/vendor/lib64/hw/vulkan.adreno.so`，没有映射模块的私有驱动或 hook 库，窗口继续显示棋盘场景与几何体。
+升级会沿用已有配置和驱动目录。旧配置中的日志等级、标签和堆栈字段会被忽略，正常保存配置后会移除；驱动绑定、应用开关和备注继续保留。
 
-未绑定的 Turnip 驱动可进入删除确认页：删除操作为上方红色文字，取消操作为下方中性色描边按钮。点击取消后驱动保留，主库哈希未变；这项验证未实际删除 Turnip。
-
-同步模板后，KernelSU 管理器中的 WebUI 已热更新并重新打开。应用列表显示 Unity 与 DevCheck；日志页读取持久日志，显示 Unity 新进程的 `Loaded`、PID/TID 和时间，并可在原卡片展开私有驱动路径。此次进程日志未发现 JavaScript 报错，但有缺失 `favicon.ico` 的资源请求；未将这项非关键请求视为页面渲染失败。热更新前的 WebUI 资源保存在设备模块数据目录的 `webroot-before-template-869578c`，驱动与配置未替换。
-
-配套 APK 已在同一 KernelSU 真机覆盖安装并启动，可读取模块状态、目标应用数量与已导入驱动列表。同步模板的 root 应用枚举后，列表可显示 Unity、DevCheck 等应用，首页正确识别 KernelSU。通过 APK 为 Unity 选择 Turnip 并执行重启后，配置写入对应驱动 ID，新进程记录 `Loaded`，映射私有 Turnip 库，窗口显示 `Turnip Adreno (TM) 750` 与棋盘场景。此结果不等于 Magisk 环境验收。
-
-APK 的系统文件选择器已取得原始 Turnip ZIP。合并传输短读后再次重复导入，页面明确显示“驱动已就绪”，暂存目录清理，索引与应用配置哈希均未变化，已安装主库 SHA-256 保持 `fdd378520022f88b0363dd1f77f6989332730271712621523075fe4eb4de2a09`。此轮约 17 MB 解压库在确认选择后的 111–162 秒之间完成；这是轮询得到的时间范围，不是精确耗时。逐块启动 root 命令仍有明显开销，不能认为性能问题已解决。
-
-APK 现已保留本次操作的“驱动已就绪”结果，重复导入且列表不变时也能显示；开始下一次导入或删除会清除旧结果。独立的非 GPU 测试包已通过系统文件选择器导入，页面显示成功结果，再通过详情与二次确认实际删除。删除后索引与对应目录均已移除，原有 Turnip、旧测试包及 Unity 绑定配置保留；测试 ZIP 仍保留，可重新导入。传输性能尚待优化。
-
-通过 APK 选择不含驱动元数据的模块 ZIP，页面显示“驱动 ZIP 或元数据无效”，旧成功提示清除，没有生成驱动记录或遗留暂存目录。再次打开文件选择器并取消后正常返回列表，不显示导入失败。两次操作前后的驱动索引与应用配置哈希一致。这项验证覆盖错误包类型与选择取消，不代表所有损坏 ZIP 或不兼容 ELF 的真机路径均已验收。
-
-传输进一步改为每次 root 命令最多写入三块，各块独立解码，任一写入失败停止后续命令；保留文件哈希校验。相同 Turnip ZIP 在 APK 真机重复导入于确认后的约 19–59 秒之间完成，成功提示、暂存清理与原有文件及配置哈希均已核对。这是轮询时间范围，不是精确基准。真实主机 shell 测试覆盖批量写入的字节一致性，以及失败后不发布、保留索引并清理暂存；原始 Turnip 与多依赖 Qualcomm ZIP 的主机导入测试通过。
-
-APK 和 KernelSU WebUI 均已验证元数据声明 arm64-v8a、但主库实际为纯文本的测试 ZIP：导入被拒绝，页面显示“不支持 arm64-v8a”，没有新增索引或遗留暂存目录，索引与应用配置哈希未变。此包没有分配给任何应用，也没有执行。更新后的 WebUI 已从 KernelSU 模块列表正常入口重新打开，首页渲染与模块状态正常；通过系统文件选择器重复导入原始 Turnip ZIP 后显示“驱动已就绪”，暂存清理、索引与绑定配置哈希未变。
-
-完整 Release ZIP `ci-180-7593c49` 已构建，真实主机 shell 的 arm64 安装测试确认模块及两份 hook 库均被解压与校验。随后通过 KernelSU 命令行覆盖安装并重启真机，启用版本为 `ci (180-7593c49-release)`，配置与驱动索引哈希未变。Unity 新进程映射私有 Turnip 主库和 Release hook 库，窗口显示 `Turnip Adreno (TM) 750` 与棋盘场景。安装前的模块目录、配置与索引保存在设备数据目录 `validation-backup-ci180`，没有替换驱动数据。
-
-未选中的 DevCheck 冷启动只映射系统 Vulkan，没有模块私有驱动或 helper。通过 APK 关闭模块总开关后，配置明确为 `enabled=false` 且保留 Unity 的绑定；重启 Unity 后仅映射系统 Vulkan，场景正常渲染。横屏自动化点击曾未确认落盘，因此另行在竖屏复测关闭与重新启用：两次点击均确认配置变化，重新启用后配置哈希与测试前一致。Unity 冷启动的新进程记录 `Loaded`，映射私有 Turnip 主库和 Release hook 库，画面显示 `Turnip Adreno (TM) 750` 与正常渲染的棋盘场景。测试结束恢复了原来的自动旋转设置。
-
-已绑定驱动缺失的运行时回退也已验证。临时移开 root 管理的 Turnip 源目录、保留索引与 Unity 绑定后，冷启动进程记录 `InvalidDriver`，仅映射系统 `/vendor/lib64/hw/vulkan.adreno.so`，没有映射模块私有驱动或 hook，棋盘场景正常渲染。原样移回目录并再次冷启动后，新进程记录 `Loaded`，映射私有 Turnip，窗口显示 `Turnip Adreno (TM) 750`。配置、索引和主库哈希均与测试前一致。此测试覆盖源目录缺失，不代表任意运行中驱动故障都能恢复。
-
-这些结果不代表所有应用或驱动兼容。使用 Turnip 时，Unity 启动日志仍报告 `VK_QCOM_fragment_density_map_offset` 缺少所需 `VK_EXT_fragment_density_map` 的扩展启用验证错误，未导致此次场景停止渲染，但不能称为无验证错误或完整 VRS 功能验收。
-
-整个 `drivers` 目录不可用时也进行了冷启动验证：将其可恢复地移到模块数据目录内的测试备份位置，Unity 进程记录 `InvalidDriver`，原因是 companion 无法读取或传输索引。进程只映射系统 Adreno 驱动，未映射模块私有驱动，棋盘场景正常渲染。目录原样恢复后，新进程重新记录 `HookInstalled` 与 `Loaded`；配置和索引哈希未变。
-
-最新 Debug 包 `ci-192-97111e0` 已构建并通过实际包内安装脚本的 arm64 双 ABI 检查：包含主模块与两个 arm64 helper，不包含第三方 GPU 驱动。原生主机测试重新运行通过，覆盖设备资格判断、companion IPC、路由和已加载文件身份；未知或非 Adreno 型号的退出证据来自主机测试，不冒充另一台 GPU 真机的运行结果。
-
-### 异常 ZIP
-
-KernelSU WebUI 通过真实系统文件选择器导入 425 字节、缺少 `meta.json` 的 ZIP 后，显示“驱动 ZIP 或元数据无效”。选择前后前台均为 KernelSU `WebUIActivity`；原有两条驱动记录保留，配置与索引 SHA-256 未变，驱动目录没有新增记录或暂存残留。测试后恢复自动旋转设置。
-
-KernelSU 管理器正常模块入口的 WebUI 已分别选入上述路径穿越和缺库 ZIP，最终均显示无效包提示。两次检查配置与索引哈希不变，无新增驱动、暂存残留或越界标记。缺库包这次从开始处理到错误提示之间存在明显延迟：17:22:35 截图仍为“处理中”，17:23:17 已返回拒绝；此结果只确认最终拒绝和数据保留，不代表反馈延迟已解决。自动旋转设置已恢复。
-
-再次复测 192 字节的缺库 ZIP 时，文件选择前后均通过系统窗口信息确认前台为 KernelSU `WebUIActivity`；确认选择后约 1 秒的截图已显示无效包提示，配置和索引哈希未变。此前延迟未复现，原因尚未确认；临时诊断代码已撤除，正式 WebUI 资产已恢复。
-
-Redmi 配套 APK 另通过系统文件选择器验证两类小型异常 ZIP：只有元数据、缺少声明主库的包，以及含 `../GPU-Loader-traversal-marker`、元数据和 arm64 ELF 头测试主库的路径穿越包。两者均显示“驱动 ZIP 或元数据无效”，配置和驱动索引哈希保持不变，没有新增驱动或遗留暂存目录；路径穿越标记也没有生成。测试包未绑定应用、未执行，手机自动旋转设置已恢复。
-
-### Magisk 模拟器与链接修复
-
-去除多余 Android 库依赖后，源码提交 `94790d9` 的 Release 包 `ci-186-94790d9` 已在 Redmi KernelSU 真机覆盖安装并重启复验。Unity 新进程记录 `HookInstalled` 与 `Loaded`，映射私有 `vulkan.ad07xx.so`，画面仍显示 `Turnip Adreno (TM) 750` 与棋盘场景。配置和驱动索引 SHA-256 均与安装前一致；旧模块及配置保存在设备 `validation-backup-ci186`。这确认该链接改动没有阻断已验证的 Adreno 加载路径，仍保留前述 Unity 扩展验证错误的限制。
-
-后续探针验证发现主模块多余的 `libandroid.so` 链接依赖会在该镜像的 Magisk companion namespace 中触发间接依赖加载失败。去除该链接后，重新构建并安装 `ci-185-a8ba69b` 测试包、重启，目标探针进程实际记录 `UnsupportedDevice`：KGSL 型号不可用，跳过自定义驱动并使用系统 Vulkan。探针成功创建 instance/device、提交命令、等待 fence，并回读验证 4096 字节。产物检查 `scripts/test-module-dependencies.sh <llvm-readelf> <module.so>` 确认主模块不依赖 `libandroid.so`；这项检查在修复前失败。此结果证明该 Magisk 环境的模块执行与型号缺失安全退出，不证明 Adreno 加载。
-
-现有 `ZygiskTemplateVerify` AVD 为 arm64、16 KB 页大小的 Google Play 系统镜像，运行 Magisk 31。保留模拟器数据，通过 `magisk --install-module` 安装 Release ZIP `ci-182-f30bfd7`，安装器成功校验并解压主模块及两份 helper。启用 Magisk Zygisk 设置并重启后，模块目录和版本正确；配套 APK 首页实际渲染，识别 Magisk，显示该模块版本与配置路径。此处的首页状态不证明 Zygisk 已注入目标进程，也不证明自定义驱动已加载；模拟器不是 Adreno 设备，后续仅用于平台桥接与安全退出验收。
-
-## 从源码构建
-
-```bash
-git clone --recursive https://github.com/NKU100/zygisk-gpu-driver-loader.git
-cd zygisk-gpu-driver-loader
-./gradlew :module:zipRelease
-./gradlew :webui-app:assembleDebug
-```
-
-模块 ZIP 输出到 `module/release/`。代码依赖固定版本的 AdrenoTools 子模块，第三方驱动不随源码或模块发布。
-
-安装器按设备架构提取原生库：32 位 ARM 与 x86 只安装对应的 32 位库，64 位设备按系统是否支持 32 位进程决定是否附带 32 位库；AdrenoTools helper 只在 arm64 安装。主机测试执行 ZIP 内的实际安装与 SHA-256 校验脚本，并检查安装后的库集合，不验证对应架构的进程运行：
-
-```bash
-sh scripts/test-module-install.sh /absolute/module.zip arm64 false
-sh scripts/test-module-install.sh /absolute/module.zip arm64 true
-sh scripts/test-module-install.sh /absolute/module.zip arm true
-sh scripts/test-module-install.sh /absolute/module.zip x86 true
-sh scripts/test-module-install.sh /absolute/module.zip x64 true
-sh scripts/test-module-install.sh /absolute/module.zip riscv64 false
-```
-
-第二个参数使用 Magisk/KernelSU 架构名，第三个参数表示是否存在 32 位 ABI；省略时测试 arm64、不含 32 位 ABI 的场景。
-
-```bash
-sh scripts/test-native.sh
-./gradlew :webui:testAndroidHostTest
-./gradlew :webui:buildWebUI
-```
-
-原始 ZIP 的主机导入集成测试需要主动提供本地文件；未提供时该测试会跳过，不表示原始 ZIP 已验证：
-
-```bash
-GPU_DRIVER_TEST_ZIPS=/absolute/driver-one.zip:/absolute/driver-two.zip \
-  ./gradlew :webui:testAndroidHostTest --rerun-tasks
-```
-
-该测试执行生产导入代码和真实主机 shell，但不操作手机文件选择器，也不执行第三方 GPU 库。加载设计详见[第一版设计](superpowers/specs/2026-09-24-gpu-driver-loading-v1-design.md)。
+源码构建及测试命令见[开发说明](development.md)。
