@@ -61,8 +61,8 @@ void *loadSphalLibrary(const char *filename, int flags) {
         }, identifyDriver);
     const int priority = routed.status == DriverLoadStatus::Loaded ? ANDROID_LOG_INFO : ANDROID_LOG_WARN;
     char message[2048];
-    snprintf(message, sizeof(message), "driver request=%s status=%s selectedPath=%s handle=%p",
-        filename ? filename : "<null>", statusName(routed.status), selectedDriverPath.c_str(), routed.handle);
+    snprintf(message, sizeof(message), "driver request=%s status=%s selectedPath=%s",
+        filename ? filename : "<null>", statusName(routed.status), selectedDriverPath.c_str());
     if (runtimeLogSink) runtimeLogSink(priority, message);
     else __android_log_print(priority, "ZygiskWebUI", "%s", message);
     return routed.handle;
@@ -483,7 +483,7 @@ DriverLoadResult prepareDriver([[maybe_unused]] zygisk::Api *api, [[maybe_unused
         result.reason = "received custom driver failed file or arm64 ELF validation";
         return result;
     }
-    __android_log_print(ANDROID_LOG_INFO, "ZygiskWebUI", "custom driver file found: %s/%s",
+    __android_log_print(ANDROID_LOG_DEBUG, "ZygiskWebUI", "custom driver file found: %s/%s",
                         selection.driverId.c_str(), name.c_str());
     Fd stageSocket(api->connectCompanion());
     const uint8_t opcode = PrepareDriverOpcode;
@@ -696,7 +696,7 @@ void serveDriverFile(int socket, uint8_t opcode) {
         __android_log_print(ANDROID_LOG_WARN, "ZygiskWebUI",
                             "companion driver IPC stage=file_fd_send failed errno=%d", errno);
     } else {
-        __android_log_print(ANDROID_LOG_INFO, "ZygiskWebUI",
+        __android_log_print(ANDROID_LOG_DEBUG, "ZygiskWebUI",
                             "companion driver IPC stage=file_fd_sent kind=%s",
                             request.kind == companion_fd::MetadataFile ? "metadata" : "library");
     }

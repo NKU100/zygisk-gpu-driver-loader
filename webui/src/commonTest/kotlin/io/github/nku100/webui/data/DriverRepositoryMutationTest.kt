@@ -268,8 +268,8 @@ class DriverRepositoryMutationTest {
             enabled = false,
             targetPackages = listOf("example.active"),
             packageSettings = mapOf(
-                "example.active" to PackageSettings(driverId = imported.driver.driverId, logLevel = "DEBUG", note = "active"),
-                "example.inactive" to PackageSettings(driverId = imported.driver.driverId, logTag = "trace"),
+                "example.active" to PackageSettings(driverId = imported.driver.driverId, note = "active"),
+                "example.inactive" to PackageSettings(driverId = imported.driver.driverId, note = "inactive"),
                 "example.other" to PackageSettings(driverId = "other-driver", note = "untouched"),
             ),
         )

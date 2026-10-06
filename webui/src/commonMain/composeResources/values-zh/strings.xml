@@ -33,20 +33,12 @@
     <string name="section_module">模块</string>
     <string name="enable_for_this_app">为此应用启用</string>
     <string name="enable_for_this_app_summary">在应用启动时进行 Hook 并输出日志</string>
-    <string name="section_log_settings">日志设置</string>
     <string name="section_gpu_driver">GPU 驱动</string>
     <string name="gpu_driver">此应用使用的驱动</string>
     <string name="gpu_driver_summary">选择已导入的驱动，或使用系统驱动</string>
     <string name="system_driver">系统驱动</string>
     <string name="driver_unavailable">之前选择的驱动（不可用）</string>
     <string name="driver_remote_process_note">此选择也适用于该应用的其他进程，包括 :remote。更改驱动后请重启应用。</string>
-    <string name="log_level">日志级别</string>
-    <string name="log_level_summary">输出的最低严重级别</string>
-    <string name="dump_stack_trace">输出堆栈跟踪</string>
-    <string name="dump_stack_trace_summary">在每条日志中包含调用堆栈</string>
-    <string name="section_log_tag">日志标签</string>
-    <string name="custom_tag">自定义标签</string>
-    <string name="custom_tag_hint">留空则使用应用包名</string>
     <string name="section_note">备注</string>
     <string name="note_placeholder">为此应用添加备注（可选）</string>
 

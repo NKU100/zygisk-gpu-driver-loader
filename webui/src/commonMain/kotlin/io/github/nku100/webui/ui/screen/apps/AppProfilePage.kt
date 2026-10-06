@@ -91,8 +91,6 @@ fun AppProfilePage(
 
     val settings = state.settings
 
-    // TextFields need local state for smooth typing; saved on value change with debounce effect
-    var logTagLocal by rememberSaveable(settings.logTag) { mutableStateOf(settings.logTag) }
     var noteLocal by rememberSaveable(settings.note) { mutableStateOf(settings.note) }
 
     Scaffold(
@@ -254,71 +252,6 @@ fun AppProfilePage(
                     fontSize = 13.sp,
                     color = colorScheme.onSurfaceVariantSummary,
                 )
-            }
-
-            // Log settings section
-            item {
-                SmallTitle(text = stringResource(Res.string.section_log_settings))
-            }
-            item {
-                Card(
-                    modifier = Modifier
-                        .padding(horizontal = 12.dp)
-                        .padding(bottom = 12.dp),
-                ) {
-                    val logLevelOptions = listOf("DEBUG", "INFO", "WARN")
-                    OverlayDropdownPreference(
-                        title = stringResource(Res.string.log_level),
-                        summary = stringResource(Res.string.log_level_summary),
-                        items = logLevelOptions,
-                        selectedIndex = logLevelOptions.indexOf(settings.logLevel).coerceAtLeast(0),
-                        onSelectedIndexChange = { idx ->
-                            actions.onSaveSettings(settings.copy(logLevel = logLevelOptions[idx]))
-                        },
-                    )
-                    SwitchPreference(
-                        title = stringResource(Res.string.dump_stack_trace),
-                        summary = stringResource(Res.string.dump_stack_trace_summary),
-                        checked = settings.dumpStackTrace,
-                        onCheckedChange = { actions.onSaveSettings(settings.copy(dumpStackTrace = it)) },
-                    )
-                }
-            }
-
-            // Log tag
-            item {
-                SmallTitle(text = stringResource(Res.string.section_log_tag))
-            }
-            item {
-                Card(
-                    modifier = Modifier
-                        .padding(horizontal = 12.dp)
-                        .padding(bottom = 12.dp),
-                    insideMargin = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                ) {
-                    Text(
-                        text = stringResource(Res.string.custom_tag),
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = colorScheme.onSurface,
-                    )
-                    Text(
-                        text = stringResource(Res.string.custom_tag_hint),
-                        fontSize = 13.sp,
-                        color = colorScheme.onSurfaceVariantSummary,
-                        modifier = Modifier.padding(top = 2.dp, bottom = 8.dp),
-                    )
-                    TextField(
-                        value = logTagLocal,
-                        onValueChange = {
-                            logTagLocal = it
-                            actions.onSaveSettings(settings.copy(logTag = it))
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = state.packageInfo.packageName.substringAfterLast('.'),
-                        singleLine = true,
-                    )
-                }
             }
 
             // Note

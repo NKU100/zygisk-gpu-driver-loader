@@ -148,7 +148,7 @@ class LogsViewModel : ViewModel() {
     }
 
     private val MOCK_LINES = listOf(
-        parseLogLine("04-08 04:49:52.878  3285  3285 I SampleHook: [ZygiskWebUI] process=com.android.chrome logLevel=verbose dumpStackTrace=false"),
+        parseLogLine("04-08 04:49:52.878  3285  3285 I ZygiskWebUI: process=com.example.app status=HookInstalled"),
         parseLogLine("04-08 04:50:01.123  4000  4000 D SampleHook: [ZygiskWebUI] preAppSpecialize called for com.google.android.gms"),
         parseLogLine("04-08 04:50:02.456  4001  4001 W SampleHook: [ZygiskWebUI] config not found for com.example.unknown, skipping"),
         parseLogLine("04-08 04:50:03.789  4002  4002 E SampleHook: [ZygiskWebUI] Failed to open config.json: No such file or directory"),

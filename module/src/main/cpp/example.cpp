@@ -12,10 +12,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* Zygisk Module WebUI Template — example implementation
- *
- * Reads config.json written by the WebUI and logs according to per-package settings.
- *
+/*
  * Architecture note:
  *   preAppSpecialize() retains zygote privileges, including SELinux restrictions.
  *   Log lines are sent to the companion process (root) via IPC,
@@ -39,7 +36,6 @@
 #include <algorithm>
 
 #include "zygisk.hpp"
-#include "yyjson.h"
 #include "driver_loader.h"
 #include "companion_fd.h"
 #include "runtime_log.h"
@@ -338,53 +334,6 @@ private:
             prepareRuntimeLog();
             break;
         }
-        if (!targeted) {
-            return;
-        }
-
-        yyjson_doc *doc = yyjson_read(configJson.data(), configJson.size(), 0);
-        if (!doc) {
-            return;
-        }
-        yyjson_val *root = yyjson_doc_get_root(doc);
-        const char *process = selection.packageName.c_str();
-
-        // Per-package settings
-        const char *logLevel = "INFO";
-        const char *logTag   = process;
-        bool dumpStack       = false;
-
-        yyjson_val *pkgSettings = yyjson_obj_get(root, "packageSettings");
-        if (yyjson_is_obj(pkgSettings)) {
-            yyjson_val *thisPkg = yyjson_obj_get(pkgSettings, process);
-            if (yyjson_is_obj(thisPkg)) {
-                yyjson_val *v;
-                v = yyjson_obj_get(thisPkg, "logLevel");
-                if (yyjson_is_str(v)) logLevel = yyjson_get_str(v);
-                v = yyjson_obj_get(thisPkg, "logTag");
-                if (yyjson_is_str(v) && yyjson_get_len(v) > 0) logTag = yyjson_get_str(v);
-                v = yyjson_obj_get(thisPkg, "dumpStackTrace");
-                if (yyjson_is_bool(v)) dumpStack = yyjson_get_bool(v);
-            }
-        }
-
-        int prio = (strcmp(logLevel, "DEBUG") == 0) ? ANDROID_LOG_DEBUG
-                 : (strcmp(logLevel, "WARN")  == 0) ? ANDROID_LOG_WARN
-                 :                                     ANDROID_LOG_INFO;
-
-        char msgBuf[2048];
-        snprintf(msgBuf, sizeof(msgBuf),
-            "[ZygiskWebUI] process=%s logLevel=%s dumpStackTrace=%s",
-            process, logLevel, dumpStack ? "true" : "false");
-        remoteLog(api, prio, logTag, msgBuf);
-
-        if (dumpStack) {
-            snprintf(msgBuf, sizeof(msgBuf),
-                "[ZygiskWebUI] stack trace requested for %s (implement hook here)", process);
-            remoteLog(api, prio, logTag, msgBuf);
-        }
-
-        yyjson_doc_free(doc);
     }
 
     void prepareRuntimeLog() {
