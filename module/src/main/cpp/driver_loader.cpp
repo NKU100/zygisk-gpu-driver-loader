@@ -1,4 +1,5 @@
 #include "driver_loader.h"
+#include "log_tag.h"
 #include "gpu_model_reader.h"
 #include "zygisk.hpp"
 #include "yyjson.h"
@@ -64,7 +65,7 @@ void *loadSphalLibrary(const char *filename, int flags) {
     snprintf(message, sizeof(message), "driver request=%s status=%s selectedPath=%s",
         filename ? filename : "<null>", statusName(routed.status), selectedDriverPath.c_str());
     if (runtimeLogSink) runtimeLogSink(priority, message);
-    else __android_log_print(priority, "ZygiskWebUI", "%s", message);
+    else __android_log_print(priority, LogTag, "%s", message);
     return routed.handle;
 }
 #endif
@@ -184,20 +185,20 @@ int requestDriverFile(zygisk::Api *api, const std::string &driverId,
                       const std::string &fileName, uint8_t kind) {
     Fd socket(api->connectCompanion());
     if (socket.value < 0) {
-        __android_log_print(ANDROID_LOG_WARN, "ZygiskWebUI",
+        __android_log_print(ANDROID_LOG_WARN, LogTag,
                             "driver IPC stage=connect_companion failed errno=%d", errno);
         return -1;
     }
     timeval timeout{2, 0};
     if (setsockopt(socket.value, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) ||
         setsockopt(socket.value, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout))) {
-        __android_log_print(ANDROID_LOG_WARN, "ZygiskWebUI",
+        __android_log_print(ANDROID_LOG_WARN, LogTag,
                             "driver IPC stage=socket_timeout_setup failed errno=%d", errno);
         return -1;
     }
     companion_fd::FileRequest request{OpenDriverOpcode, kind, driverId, fileName};
     if (!companion_fd::sendFileRequest(socket.value, request)) {
-        __android_log_print(ANDROID_LOG_WARN, "ZygiskWebUI",
+        __android_log_print(ANDROID_LOG_WARN, LogTag,
                             "driver IPC stage=file_request_send failed errno=%d", errno);
         return -1;
     }
@@ -205,7 +206,7 @@ int requestDriverFile(zygisk::Api *api, const std::string &driverId,
     if (snapshot.value < 0 || !companion_fd::sendFileReply(socket.value, snapshot.value)) return -1;
     int file = companion_fd::receiveFileReply(socket.value);
     if (file < 0) {
-        __android_log_print(ANDROID_LOG_WARN, "ZygiskWebUI",
+        __android_log_print(ANDROID_LOG_WARN, LogTag,
                             "driver IPC stage=file_fd_reply_receive failed errno=%d", errno);
     }
     if (file >= 0 && fcntl(file, F_ADD_SEALS, F_SEAL_WRITE | F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL)) {
@@ -454,13 +455,13 @@ DriverLoadResult prepareDriver([[maybe_unused]] zygisk::Api *api, [[maybe_unused
         return result;
     }
     if (!validReceivedFile(meta.value, MaxMetadataBytes)) {
-        __android_log_print(ANDROID_LOG_WARN, "ZygiskWebUI",
+        __android_log_print(ANDROID_LOG_WARN, LogTag,
                             "driver receive stage=metadata_file_validation failed");
         result.reason = "received registry metadata file failed validation";
         return result;
     }
     if (!readText(meta.value, text)) {
-        __android_log_print(ANDROID_LOG_WARN, "ZygiskWebUI",
+        __android_log_print(ANDROID_LOG_WARN, LogTag,
                             "driver receive stage=metadata_read failed errno=%d", errno);
         result.reason = "received registry metadata file could not be read";
         return result;
@@ -478,12 +479,12 @@ DriverLoadResult prepareDriver([[maybe_unused]] zygisk::Api *api, [[maybe_unused
         return result;
     }
     if (!validReceivedFile(library.value, MaxLibraryBytes) || !arm64Library(library.value)) {
-        __android_log_print(ANDROID_LOG_WARN, "ZygiskWebUI",
+        __android_log_print(ANDROID_LOG_WARN, LogTag,
                             "driver receive stage=library_file_validation failed");
         result.reason = "received custom driver failed file or arm64 ELF validation";
         return result;
     }
-    __android_log_print(ANDROID_LOG_DEBUG, "ZygiskWebUI", "custom driver file found: %s/%s",
+    __android_log_print(ANDROID_LOG_DEBUG, LogTag, "custom driver file found: %s/%s",
                         selection.driverId.c_str(), name.c_str());
     Fd stageSocket(api->connectCompanion());
     const uint8_t opcode = PrepareDriverOpcode;
@@ -531,7 +532,7 @@ DriverLoadResult prepareDriver([[maybe_unused]] zygisk::Api *api, [[maybe_unused
 
 void serveDriverPreparation(int socket) {
     auto fail = [&](const char *reason) {
-        __android_log_print(ANDROID_LOG_WARN, "ZygiskWebUI", "root preparation failed: %s errno=%d", reason, errno);
+        __android_log_print(ANDROID_LOG_WARN, LogTag, "root preparation failed: %s errno=%d", reason, errno);
         companion_fd::sendText(socket, std::string("{\"error\":\"") + reason + "\"}", 16384);
     };
 #if defined(__aarch64__)
@@ -657,13 +658,13 @@ void serveDriverFile(int socket, uint8_t opcode) {
         (request.kind != companion_fd::MetadataFile && request.kind != companion_fd::LibraryFile) ||
         (request.kind == companion_fd::MetadataFile && request.fileName != "meta.json") ||
         (request.kind == companion_fd::LibraryFile && request.fileName == "meta.json")) {
-        __android_log_print(ANDROID_LOG_WARN, "ZygiskWebUI",
+        __android_log_print(ANDROID_LOG_WARN, LogTag,
                             "companion driver IPC stage=request_validation failed");
         companion_fd::sendFileReply(socket, -1);
         return;
     }
     auto fail = [&](const char *stage, int error) {
-        __android_log_print(ANDROID_LOG_WARN, "ZygiskWebUI",
+        __android_log_print(ANDROID_LOG_WARN, LogTag,
                             "companion driver IPC stage=%s failed errno=%d", stage, error);
         companion_fd::sendFileReply(socket, -1);
     };
@@ -693,10 +694,10 @@ void serveDriverFile(int socket, uint8_t opcode) {
         return;
     }
     if (!companion_fd::sendFileReply(socket, snapshot.value)) {
-        __android_log_print(ANDROID_LOG_WARN, "ZygiskWebUI",
+        __android_log_print(ANDROID_LOG_WARN, LogTag,
                             "companion driver IPC stage=file_fd_send failed errno=%d", errno);
     } else {
-        __android_log_print(ANDROID_LOG_DEBUG, "ZygiskWebUI",
+        __android_log_print(ANDROID_LOG_DEBUG, LogTag,
                             "companion driver IPC stage=file_fd_sent kind=%s",
                             request.kind == companion_fd::MetadataFile ? "metadata" : "library");
     }

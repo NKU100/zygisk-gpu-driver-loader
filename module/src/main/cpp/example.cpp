@@ -39,6 +39,7 @@
 #include "driver_loader.h"
 #include "companion_fd.h"
 #include "runtime_log.h"
+#include "log_tag.h"
 #include <mutex>
 #include <sys/syscall.h>
 
@@ -72,7 +73,6 @@ static bool socket_transfer(int fd, void *buffer, size_t size, bool writing) {
     return true;
 }
 
-#define LOG_TAG    "ZygiskWebUI"
 #ifndef MODULE_ID
 #define MODULE_ID  "zygisk_sample"
 #endif
@@ -212,8 +212,8 @@ static std::string logLine(int prio, const char *tag, const char *msg) {
 
 static void runtimeLog(int prio, const char *message) {
     std::string identified = "process=" + runtimeProcess + " " + message;
-    if (!runtimeLogSender.send(logLine(prio, LOG_TAG, identified.c_str())))
-        __android_log_print(ANDROID_LOG_WARN, LOG_TAG, "runtime log queue unavailable or full");
+    if (!runtimeLogSender.send(logLine(prio, gpu::LogTag, identified.c_str())))
+        __android_log_print(ANDROID_LOG_WARN, gpu::LogTag, "runtime log queue unavailable or full");
 }
 
 static void remoteLog(Api *api, int prio, const char *tag, const char *msg) {
@@ -327,7 +327,7 @@ private:
             std::string diagnostic = "target=" + targetPackage + " process=" + processName +
                 " status=" + gpu::statusName(prepared.result.status) + " reason=" + prepared.result.reason +
                 "; fallback to system driver";
-            remoteLog(api, ANDROID_LOG_WARN, LOG_TAG, diagnostic.c_str());
+            remoteLog(api, ANDROID_LOG_WARN, gpu::LogTag, diagnostic.c_str());
             break;
         }
         case gpu::DriverLifecycleAction::KeepModuleLibrary:
@@ -358,7 +358,7 @@ private:
             socket_transfer(sock, &process, sizeof(process), true) &&
             gpu::companion_fd::sendFileReply(sock, channel) &&
             socket_transfer(sock, &accepted, sizeof(accepted), false) && accepted == 1;
-        __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG,
+        __android_log_print(ANDROID_LOG_DEBUG, gpu::LogTag,
             "runtime log queue connected=%d", connected);
         close(channel);
         close(sock);
