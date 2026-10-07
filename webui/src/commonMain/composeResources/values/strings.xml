@@ -114,7 +114,7 @@
     <!-- AboutPage -->
     <string name="author">Author</string>
     <string name="license">License</string>
-    <string name="license_value">Apache License 2.0</string>
+    <string name="license_value">Multiple; see LICENSE and notices</string>
 
     <!-- LogsPage -->
     <string name="search_logs">Search logs…</string>

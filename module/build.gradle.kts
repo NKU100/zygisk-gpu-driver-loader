@@ -175,6 +175,11 @@ androidComponents.onVariants { variant ->
             exclude("**/*.map")
         }
         from(rootProject.layout.projectDirectory.file("README.md"))
+        from(rootProject.layout.projectDirectory.file("LICENSE"))
+        from(rootProject.layout.projectDirectory.file("THIRD_PARTY_NOTICES.md"))
+        from(rootProject.layout.projectDirectory.dir("LICENSES")) {
+            into("LICENSES")
+        }
         from(layout.projectDirectory.file("src/main/cpp/external/libadrenotools/LICENSE")) {
             into("licenses")
             rename { "libadrenotools.txt" }

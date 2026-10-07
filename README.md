@@ -31,3 +31,7 @@
 - [模板同步说明](docs/template-sync.md)
 
 项目基于 [Zygisk Module WebUI Template](https://github.com/NKU100/zygisk-module-webui-template)，使用 [AdrenoTools](https://github.com/bylaws/libadrenotools) 加载自定义驱动。导入的驱动由用户自行获取，其授权和兼容性由相应驱动项目决定。
+
+## License
+
+本仓库包含多个许可范围。请查看 [LICENSE](LICENSE) 和[第三方声明](THIRD_PARTY_NOTICES.md)，其中也说明了尚待确认许可的继承文件。
