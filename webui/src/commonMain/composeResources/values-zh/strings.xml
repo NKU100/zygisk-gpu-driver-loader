@@ -122,7 +122,7 @@
     <!-- AboutPage -->
     <string name="author">作者</string>
     <string name="license">许可证</string>
-    <string name="license_value">Apache License 2.0</string>
+    <string name="license_value">多项许可；详见 LICENSE 与第三方声明</string>
 
     <!-- LogsPage -->
     <string name="search_logs">搜索日志…</string>

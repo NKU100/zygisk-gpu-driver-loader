@@ -4,7 +4,7 @@ This repository includes a workflow for receiving updates from the template repo
 
 ## Normal operation
 
-`.github/workflows/sync-template.yml` runs every Monday at 04:17 UTC and can also be started from the Actions page with **Run workflow**. It fetches complete histories, merges the configured template ref, and asks `peter-evans/create-pull-request` to create or update the fixed `chore/template-sync` branch and Pull Request.
+`.github/workflows/sync-template.yml` runs every day at 04:17 UTC and can also be started from the Actions page with **Run workflow**. It fetches complete histories, merges the configured template ref, and asks `peter-evans/create-pull-request` to create or update the fixed `chore/template-sync` branch and Pull Request.
 
 Review and merge the Pull Request instead of allowing the workflow to update the default branch directly. A merge commit keeps the template parent relationship for later synchronizations. Squash merging is functionally supported, but a later run may need to perform the delayed seed graft again.
 
@@ -42,6 +42,8 @@ Do not use a blanket template-wins merge option; it would discard module-specifi
 ## Token permissions
 
 The workflow falls back to `GITHUB_TOKEN`. For ordinary source-file updates, the workflow-level `contents: write` and `pull-requests: write` permissions are sufficient when the repository's Actions settings allow workflows to create Pull Requests.
+
+In the repository, open **Settings → Actions → General → Workflow permissions**, select **Read and write permissions**, and enable **Allow GitHub Actions to create and approve pull requests**. Without these repository-level settings, the workflow can merge template history and push its synchronization branch but cannot open the Pull Request.
 
 Set the `TEMPLATE_SYNC_TOKEN` repository secret when the synchronization Pull Request must modify workflow files under `.github/workflows/`, or when repository policy does not grant the default token the required permissions. The replacement token must have write access to repository contents, Pull Requests, and workflow files according to its token type.
 

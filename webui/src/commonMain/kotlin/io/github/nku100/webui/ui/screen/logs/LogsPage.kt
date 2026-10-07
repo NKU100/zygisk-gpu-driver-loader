@@ -94,22 +94,22 @@ fun LogsPage(
     val lazyListState = rememberLazyListState()
     val pullToRefreshState = rememberPullToRefreshState()
 
-    // Auto-scroll to bottom when new lines arrive, but only if user is near the bottom
-    val shouldAutoScroll by remember {
+    // Keep the newest logs visible when the user is already near the top.
+    val shouldAutoScrollToLatest by remember {
         derivedStateOf {
-            val lastVisible = lazyListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            val totalItems = lazyListState.layoutInfo.totalItemsCount
-            lastVisible >= totalItems - 3
+            val firstVisible = lazyListState.layoutInfo.visibleItemsInfo.firstOrNull()?.index ?: 0
+            firstVisible <= 2
         }
     }
-    LaunchedEffect(state.visibleLines.size) {
-        if (state.visibleLines.isNotEmpty() && shouldAutoScroll) {
-            lazyListState.animateScrollToItem(state.visibleLines.size - 1)
+    LaunchedEffect(state.visibleLines) {
+        if (state.visibleLines.isNotEmpty() && shouldAutoScrollToLatest) {
+            lazyListState.animateScrollToItem(0)
         }
     }
 
     val showFilterPopup = remember { mutableStateOf(false) }
     val expandedLogIndex = remember { mutableStateOf<Int?>(null) }
+    val newestFirstLines = remember(state.visibleLines) { state.visibleLines.asReversed() }
     LaunchedEffect(state.visibleLines) {
         expandedLogIndex.value = null
     }
@@ -208,8 +208,8 @@ fun LogsPage(
                         }
                         else -> {
                             itemsIndexed(
-                                items = state.visibleLines,
-                                key = { index, _ -> index },
+                                items = newestFirstLines,
+                                key = { index, _ -> newestFirstLines.lastIndex - index },
                             ) { index, line ->
                                 LogLineItem(
                                     line = line,
@@ -317,8 +317,8 @@ fun LogsPage(
                         else -> {
                             item { SmallTitle(text = stringResource(Res.string.lines_count, state.visibleLines.size)) }
                             itemsIndexed(
-                                items = state.visibleLines,
-                                key = { index, _ -> index },
+                                items = newestFirstLines,
+                                key = { index, _ -> newestFirstLines.lastIndex - index },
                             ) { index, line ->
                                 LogLineItem(
                                     line = line,
