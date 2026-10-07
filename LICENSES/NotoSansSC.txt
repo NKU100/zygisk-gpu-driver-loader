@@ -1,0 +1,6 @@
+Noto Sans SC font notice
+
+Copyright (c) 2014-2021 Adobe (http://www.adobe.com/)
+Reserved Font Name: Source
+
+Licensed under the SIL Open Font License, Version 1.1. See OFL-1.1.txt.

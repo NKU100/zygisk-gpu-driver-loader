@@ -194,4 +194,8 @@ The native module is built for `arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`, and
 - [Miuix](https://compose-miuix-ui.github.io/miuix/)
 - [KernelSU JS API](https://www.npmjs.com/package/kernelsu)
 
+## License
+
+This repository contains components under different licenses. See [LICENSE](LICENSE) and [third-party notices](THIRD_PARTY_NOTICES.md) for the exact scope, attribution, and files whose licensing is still pending confirmation.
+
 [zygisk-module-template]: https://github.com/5ec1cff/zygisk-module-template

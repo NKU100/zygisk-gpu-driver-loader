@@ -81,6 +81,17 @@ jobs:
         with:
           args: --latest
 
+      - name: Add source code links
+        env:
+          REPOSITORY: ${{ github.repository }}
+          SOURCE_TAG: ${{ inputs.release-type == 'pre-release' && 'ci' || github.ref_name }}
+        run: |
+          {
+            printf '\n\n## Source code\n'
+            printf -- '- Source tree: https://github.com/%s/tree/%s\n' "$REPOSITORY" "$SOURCE_TAG"
+            printf -- '- Source archive: https://github.com/%s/archive/refs/tags/%s.tar.gz\n' "$REPOSITORY" "$SOURCE_TAG"
+          } >> module/release/changelog.md
+
       - name: Update ci tag (pre-release only)
         if: inputs.release-type == 'pre-release'
         run: |

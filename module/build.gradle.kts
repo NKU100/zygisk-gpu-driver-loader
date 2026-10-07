@@ -106,6 +106,11 @@ androidComponents.onVariants { variant ->
             exclude("**/*.map")
         }
         from(rootProject.layout.projectDirectory.file("README.md"))
+        from(rootProject.layout.projectDirectory.file("LICENSE"))
+        from(rootProject.layout.projectDirectory.file("THIRD_PARTY_NOTICES.md"))
+        from(rootProject.layout.projectDirectory.dir("LICENSES")) {
+            into("LICENSES")
+        }
         from(layout.projectDirectory.file("template")) {
             exclude("module.prop", "customize.sh", "post-fs-data.sh", "service.sh")
             filter<FixCrLfFilter>("eol" to FixCrLfFilter.CrLf.newInstance("lf"))
