@@ -22,17 +22,14 @@ class DriversUiStateTest {
         val original = ModuleConfig(
             targetPackages = listOf("app.one"),
             packageSettings = mapOf(
-                "app.one" to PackageSettings(logLevel = "DEBUG", logTag = "trace", dumpStackTrace = true, note = "keep"),
-                "app.two" to PackageSettings(driverId = "other", logLevel = "WARN"),
+                "app.one" to PackageSettings(note = "keep"),
+                "app.two" to PackageSettings(driverId = "other", note = "other note"),
             ),
         )
 
         val changed = original.withPackageDriver("app.one", "driver-a", listOf(installed))
 
         assertEquals("driver-a", changed?.packageSettings?.get("app.one")?.driverId)
-        assertEquals("DEBUG", changed?.packageSettings?.get("app.one")?.logLevel)
-        assertEquals("trace", changed?.packageSettings?.get("app.one")?.logTag)
-        assertEquals(true, changed?.packageSettings?.get("app.one")?.dumpStackTrace)
         assertEquals("keep", changed?.packageSettings?.get("app.one")?.note)
         assertEquals(original.packageSettings["app.two"], changed?.packageSettings?.get("app.two"))
         assertEquals(original.targetPackages, changed?.targetPackages)

@@ -15,10 +15,12 @@ object ConfigRepository {
 
     var configPath: String = ModuleInfo.CONFIG_PATH
 
+    internal fun decode(content: String): ModuleConfig =
+        if (content.isBlank()) ModuleConfig() else json.decodeFromString(content)
+
     suspend fun load(): ModuleConfig {
         return try {
-            val content = PlatformBridge.readFile(configPath)
-            if (content.isBlank()) ModuleConfig() else json.decodeFromString(content)
+            decode(PlatformBridge.readFile(configPath))
         } catch (_: Exception) {
             ModuleConfig()
         }

@@ -1,206 +1,37 @@
 # Zygisk GPU Driver Loader
 
-按 App 加载自定义 Adreno Vulkan 驱动的 Zygisk 模块。第一版支持导入本地驱动 ZIP 和为应用选择驱动，不内置驱动、不提供下载功能，也不替换系统驱动文件。
+为指定应用加载自定义 Adreno Vulkan 驱动的 Zygisk 模块。支持导入原始 AdrenoTools 驱动 ZIP、按应用选择驱动，以及删除驱动时将相关应用恢复为系统驱动。
 
-请先阅读[中文使用指南](docs/gpu-driver-guide.md)，了解驱动格式、配置步骤、回退方法和验证范围。当前仍在开发验证中，不能将加载成功视为所有应用均兼容。
+模块不附带 GPU 驱动，不提供在线下载，也不修改系统或 vendor 驱动文件。
 
-本项目基于 [Zygisk Module WebUI Template](https://github.com/NKU100/zygisk-module-webui-template)。以下是继承的模板开发资料，并非本模块的安装或使用步骤；模块身份已在 `module.gradle.kts` 中配置，不需要重新改成示例名称。
+## 使用条件
 
-## Features
+- Android 9 或更新版本、Qualcomm Adreno GPU、64 位 ARM 目标应用。
+- Magisk 或 KernelSU，并启用可用的 Zygisk 实现。KernelSU 需要另外安装 Zygisk 实现。
+- 目标应用通过系统 Vulkan loader 加载驱动。OpenGL ES、32 位应用和非 Adreno GPU 不在自定义驱动加载范围内。
+- 自备与设备 GPU 和 Android 版本匹配的 AdrenoTools 驱动 ZIP。
 
-- **Zygisk C++ module** with CMake build system and custom libcxx
-- **Compose Multiplatform WebUI** — single codebase, dual platform:
-  - **Web (Wasm)**: Renders in KernelSU manager's WebView via `webroot/`
-  - **Android APK**: Standalone config app for Magisk users (no WebUI support)
-- **Miuix UI framework** — KernelSU-style UI on both platforms, closely aligned with [KernelSU manager](https://github.com/tiann/KernelSU)
-  - FloatingBottomBar with Miuix Blur, lens/vibrancy effects, and AGSL/SkSL shader highlights
-  - Shared: DampedDragAnimation (spring physics, velocity deformation), InteractiveHighlight
-  - SuperSearchBar, SearchStatus state machine, StatusTag — ported from KernelSU
-- **KernelSU API abstraction** via `expect/actual` pattern (`PlatformBridge`)
-  - Full v3.0.2 API: exec (async callback), toast, listPackages, getPackagesInfo, moduleInfo, fullScreen, enableEdgeToEdge, exit
-  - Browser mock data for development preview
-  - All APIs also available under **[KsuWebUIStandalone](https://github.com/NKU100/KsuWebUIStandalone)** (Magisk users without KernelSU can run the WebUI standalone)
-- **ViewModel architecture** (Compose Multiplatform lifecycle 2.11.0)
-  - `MainViewModel` with `viewModelScope`, `StateFlow<MainUiState>`, auto-managed search debounce
-  - `MainPagerState` — cross-tab navigation with `isNavigating` guard (ported from KernelSU)
-  - `LocalMainPagerState` CompositionLocal for child pages to trigger tab navigation
-  - `rememberContentReady` — deferred pager rendering during enter animation
-- **Apps page** fully aligned with KernelSU SuperUserMiuix
-  - System app filter toggle, SuperSearchBar with full expand/collapse animation
-  - Pull-to-refresh, IME-aware bottom padding, `contentWindowInsets` display cutout support
-  - App icons via `AppIconImage` (expect/actual): Android uses `AppIconLoader` + `AppIconCache` (LRU, Semaphore, Hardware Bitmap); wasmJs fetches `ksu://icon/<pkg>` and decodes via Skia; falls back to `LetterIcon` when unavailable
-- **App Profile page** — per-app settings with targeted toggle, log level, note, and app management actions (launch / force stop / restart)
-- **JSON-based configuration** with kotlinx.serialization
-- **Bundled CJK font** — NotoSansSC WOFF2 subset (~969 KB, GB2312 coverage) loaded via Compose Resources; no runtime symlink or system font dependency
-- Supports **Magisk** and **KernelSU**
-- GitHub Actions CI/CD with auto-release
+能导入或加载驱动不代表应用一定能正常渲染。部分应用可能闪退、黑屏或出现图形错误，遇到问题请切回系统驱动并重启应用。
 
-## Project Structure
+## 安装与使用
 
-```
-├── module/                          # Zygisk native module
-│   ├── src/main/cpp/                # C++ source (Zygisk API v4)
-│   └── template/                    # Magisk module template files
-├── webui/                           # Compose Multiplatform UI
-│   └── src/
-│       ├── commonMain/              # Shared UI, data, platform expect declarations
-│       │   ├── composeResources/
-│       │   │   └── font/           # CJK font (NotoSansSC WOFF2 GB2312 subset)
-│       │   ├── data/               # ModuleConfig, ConfigRepository
-│       │   ├── platform/           # expect PlatformBridge, PlatformBackHandler, BrowserHistorySync
-│       │   └── ui/
-│       │       ├── animation/      # DampedDragAnimation, InteractiveHighlight
-│       │       ├── component/      # FloatingBottomBar, SuperSearchBar, SearchStatus, StatusTag
-│       │       ├── screen/         # MainViewModel, MainPagerState, all page composables
-│       │       │   ├── home/       # HomePage
-│       │       │   ├── apps/       # AppsPage, AppProfilePage
-│       │       │   ├── logs/       # LogsPage (real-time log viewer with filtering)
-│       │       │   └── settings/   # SettingsPage, AboutPage
-│       │       ├── theme/          # AppTheme, ThemeMode, isSystemDarkTheme
-│       │       └── util/           # DeferredContent, BlurExt (defaultBlurEffect, rememberDefaultBlurBackdrop), InsetsExt
-│       ├── androidMain/            # Android target
-│       │   ├── platform/           # PlatformBridge.android, PlatformBackHandler, BrowserHistorySync (no-op)
-│       │   └── ui/
-│       │       ├── component/      # AppIconImage.android (AppIconLoader + AppIconCache)
-│       │       ├── modifier/       # DragGestureInspector (AGSL)
-│       │       ├── util/           # AppIconCache (LRU, Semaphore, Hardware Bitmap)
-│       │       └── theme/          # MaterialKolor dynamic color
-│       └── wasmJsMain/             # Web (Wasm) target
-│           ├── platform/           # KernelSU JS API bridge (v3.0.2), PlatformBackHandler, BrowserHistorySync (hash guard)
-│           └── ui/
-│               ├── component/      # AppIconImage.wasmJs (ksu://icon/ + Skia decode)
-│               └── modifier/       # DragGestureInspector (SkSL)
-├── module.gradle.kts                # Module metadata (id, name, author)
-└── build.gradle.kts                 # Global build config
-```
+1. 从 [Releases](https://github.com/NKU100/zygisk-gpu-driver-loader/releases) 获取模块 ZIP，在 root 管理器中安装并重启设备。标记为 Pre-release 的版本属于测试构建。
+2. KernelSU 用户从模块页面打开 WebUI。Magisk 用户可通过 [KsuWebUIStandalone](https://github.com/NKU100/KsuWebUIStandalone) 打开模块 WebUI，或使用[自行构建的配置 APK](docs/development.md)；为配置应用或 WebUI 宿主授予 root 权限。
+3. 打开“设置 → GPU 驱动”，导入本地驱动 ZIP。
+4. 在“应用”页面启用目标应用，选择导入的驱动，并确认模块总开关已开启。
+5. 重启目标应用，结合模块日志与实际渲染结果确认效果。
 
-## Usage
+发生异常时，选择“系统驱动”并重启目标应用。若配置界面无法打开，在 root 管理器中禁用模块并重启设备。
 
-### 1. Clone with submodules
+详细格式、删除行为、日志含义和兼容性限制见[使用指南](docs/gpu-driver-guide.md)。
 
-```bash
-git clone --recursive https://github.com/NKU100/zygisk-module-webui-template.git
-# Or if already cloned:
-git submodule update --init --recursive
-```
+## 开发与来源
 
-### 2. Configure module metadata
+- [构建与测试](docs/development.md)
+- [模板同步说明](docs/template-sync.md)
 
-Edit [module.gradle.kts](./module.gradle.kts):
-
-```kotlin
-val moduleId by extra("zygisk_sample")
-val moduleName by extra("Zygisk Module Sample")
-val moduleAuthor by extra("NKU100")
-val moduleDesc by extra("A sample module for zygisk")
-val moduleApplicationId by extra("io.github.nku100.zygisk.sample")
-```
-
-### 3. Write native code
-
-Edit `module/src/main/cpp/example.cpp` with your Zygisk logic.
-
-### 4. Customize WebUI
-
-Edit files under `webui/src/commonMain/` to build your configuration UI:
-
-- `data/ModuleConfig.kt` — add config fields (auto-serialized to JSON)
-- `platform/PlatformBridge.kt` — add `expect` platform APIs
-- `ui/screen/MainViewModel.kt` — add business logic, state fields
-- `ui/screen/home/HomePage.kt` — Home tab
-- `ui/screen/apps/AppsPage.kt` — Apps tab (target package selection)
-- `ui/screen/settings/SettingsPage.kt` — Settings tab
-
-### Root access
-
-The installed-app inventory is queried through the authorized root shell on both
-Android and WebUI hosts. Grant root access to the APK or its WebUI host in your
-root manager. A failed query shows a retry notice instead of an empty inventory;
-labels and icons are optional enrichment, with package names kept when unavailable.
-No Xiaomi-specific installed-app permission is requested.
-
-The home page verifies UID 0 and identifies the active `su` provider from its
-version response (Magisk, KernelSU, or APatch). Unrecognized providers stay
-unknown; this does not detect dormant root installations or prove Zygisk injection.
-See the upstream [KernelSU su implementation](https://github.com/tiann/KernelSU/blob/main/userspace/ksud/src/su.rs),
-[APatch root shell](https://github.com/bmax121/APatch/blob/main/apd/src/apd.rs),
-and [Magisk su implementation](https://github.com/topjohnwu/Magisk/blob/master/native/src/core/su/su.cpp).
-ReZygisk exposes its own [state file](https://github.com/PerformanC/ReZygisk/blob/main/webroot/js/pages/home/index.js),
-but that is not a common interface across Zygisk implementations, so no Zygisk
-implementation label is currently shown.
-
-### 5. Build
-
-```bash
-# Build module zip (includes WebUI)
-./gradlew :module:zipRelease
-
-# Build WebUI only (production)
-./gradlew :webui:buildWebUI
-
-# Build Android APK
-./gradlew :webui:assembleDebug
-
-# Dev server (browser preview at http://localhost:8080)
-./gradlew :webui:wasmJsBrowserDevelopmentRun
-
-# Install both Android APK and WebUI to device
-./gradlew :webui-app:installDebug :webui:install
-```
-
-The module zip will be generated under `module/release/`.
-
-The native module is built for `arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`, and
-`riscv64`, using the NDK-provided static libc++ runtime for every ABI.
-
-### 6. Install
-
-```bash
-# KernelSU
-./gradlew :module:installKsuRelease
-
-# Magisk
-./gradlew :module:installMagiskRelease
-
-# Hot-reload WebUI to device (dev)
-./gradlew :webui:install
-```
-
-## Extending
-
-- **Add config fields**: Edit `ModuleConfig.kt`, add corresponding state/actions in `MainViewModel.kt`
-- **Add platform APIs**: Add `expect` methods in `PlatformBridge.kt`, implement in `wasmJsMain` and `androidMain`
-- **Add UI pages**: Add a new entry to `BottomTab`, create a page composable in `ui/screen/`, wire it up in `PlaceholderPage.kt`
-- **Add ViewModel state**: Extend `MainUiState` and add methods in `MainViewModel`
-
-## Tech Stack
-
-| Component      | Technology                                                             |
-|----------------|------------------------------------------------------------------------|
-| Native module  | C++20, CMake, NDK r29, Zygisk API v4                                  |
-| UI framework   | Compose Multiplatform 1.12.1                                           |
-| Language       | Kotlin 2.4.20                                                          |
-| Web target     | Kotlin/Wasm                                                            |
-| UI library     | Miuix 0.9.4                                                            |
-| Glass effects  | Miuix Blur 0.9.4                                                        |
-| Shapes         | Compose `CircleShape` and `RoundedCornerShape`                       |
-| Architecture   | ViewModel (lifecycle-viewmodel 2.11.0) + StateFlow + Navigation 3       |
-| Serialization  | kotlinx.serialization (JSON)                                           |
-| Build system   | Gradle 9.7.1, AGP 9.4.1                                                 |
-
-## See also
-
-- [zygisk-module-sample](https://github.com/topjohnwu/zygisk-module-sample)
-- [KernelSU Module WebUI](https://kernelsu.org/guide/module-webui.html)
-- [Template synchronization](docs/template-sync.md)
-- [KsuWebUIStandalone](https://github.com/NKU100/KsuWebUIStandalone) — run module WebUI standalone on Magisk (full KSU JS API aligned)
-- [KsuWebUIStandalone compatibility](docs/ksu-webui-standalone.md) — bridge, inset, and virtual resource expectations
-- [Compose Multiplatform](https://github.com/JetBrains/compose-multiplatform)
-- [Miuix](https://compose-miuix-ui.github.io/miuix/)
-- [KernelSU JS API](https://www.npmjs.com/package/kernelsu)
+项目基于 [Zygisk Module WebUI Template](https://github.com/NKU100/zygisk-module-webui-template)，使用 [AdrenoTools](https://github.com/bylaws/libadrenotools) 加载自定义驱动。导入的驱动由用户自行获取，其授权和兼容性由相应驱动项目决定。
 
 ## License
 
-This repository contains components under different licenses. See [LICENSE](LICENSE) and [third-party notices](THIRD_PARTY_NOTICES.md) for the exact scope, attribution, and files whose licensing is still pending confirmation.
-
-[zygisk-module-template]: https://github.com/5ec1cff/zygisk-module-template
+本仓库包含多个许可范围。请查看 [LICENSE](LICENSE) 和[第三方声明](THIRD_PARTY_NOTICES.md)，其中也说明了尚待确认许可的继承文件。

@@ -33,20 +33,12 @@
     <string name="section_module">Module</string>
     <string name="enable_for_this_app">Enable for this app</string>
     <string name="enable_for_this_app_summary">Hook this app on launch and output log</string>
-    <string name="section_log_settings">Log Settings</string>
     <string name="section_gpu_driver">GPU Driver</string>
     <string name="gpu_driver">Driver for this app</string>
     <string name="gpu_driver_summary">Choose an imported driver or use the system driver</string>
     <string name="system_driver">System driver</string>
     <string name="driver_unavailable">Previously selected driver (unavailable)</string>
     <string name="driver_remote_process_note">This choice also applies to this app\'s other processes, including :remote. Restart the app after changing drivers.</string>
-    <string name="log_level">Log level</string>
-    <string name="log_level_summary">Minimum severity level to output</string>
-    <string name="dump_stack_trace">Dump stack trace</string>
-    <string name="dump_stack_trace_summary">Include call stack in each log entry</string>
-    <string name="section_log_tag">Log Tag</string>
-    <string name="custom_tag">Custom tag</string>
-    <string name="custom_tag_hint">Leave blank to use the app\'s package name</string>
     <string name="section_note">Note</string>
     <string name="note_placeholder">Optional note about this app</string>
 

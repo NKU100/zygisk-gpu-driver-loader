@@ -35,12 +35,6 @@ data class ModuleConfig(
 data class PackageSettings(
     /** Selected imported graphics driver, or empty for the system driver. */
     val driverId: String = "",
-    /** Log level: DEBUG, INFO, WARN */
-    val logLevel: String = "INFO",
-    /** Custom log tag. Defaults to the app's short package name. */
-    val logTag: String = "",
-    /** Whether to dump the call stack trace in log output. */
-    val dumpStackTrace: Boolean = false,
     /** Optional note/description for this package. */
     val note: String = "",
 )
