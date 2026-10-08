@@ -297,7 +297,7 @@ object DriverRepository {
     }
 
     private fun protocolLines(output: String): List<String> {
-        if (output.isEmpty() || !output.endsWith('\n') || '\r' in output) {
+        if (output.isEmpty() || '\r' in output) {
             throw DriverStoreException(DriverArchiveError.INVALID_ZIP)
         }
         val body = output.removeSuffix("\n")

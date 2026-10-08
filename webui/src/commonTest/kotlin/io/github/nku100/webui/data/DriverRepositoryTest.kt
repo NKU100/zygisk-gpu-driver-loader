@@ -19,7 +19,7 @@ class DriverRepositoryTest {
             "DRIVER_IMPORT_V1\tOK\tLIST",
             "DIR\t${Base64.encode("转\u6362".encodeToByteArray())}",
             "ZIP\t${Base64.encode("Turnip 25.2.zip".encodeToByteArray())}",
-        ).joinToString("\n", postfix = "\n")
+        ).joinToString("\n")
 
         val directory = DriverRepository.parseDirectoryProtocol(path, output)
 
@@ -37,7 +37,7 @@ class DriverRepositoryTest {
             "DRIVER_IMPORT_V2\tOK\tLIST\n",
             "DRIVER_IMPORT_V1\tOK\tLIST\nZIP\t%%%\n",
             "DRIVER_IMPORT_V1\tOK\tLIST\nDIR\t${Base64.encode("../escape".encodeToByteArray())}\n",
-            "DRIVER_IMPORT_V1\tOK\tLIST\nDIR\t${Base64.encode("folder".encodeToByteArray())}",
+            "DRIVER_IMPORT_V1\tOK\tLIST\nDIR\t${Base64.encode("folder".encodeToByteArray())}\textra",
         )) {
             assertFailsWith<DriverPathException> { DriverRepository.parseDirectoryProtocol("/storage/emulated/0", output) }
         }
@@ -56,7 +56,7 @@ class DriverRepositoryTest {
             "FILE\t${Base64.encode("meta.json".encodeToByteArray())}\t${meta.encodeToByteArray().size}\t${"b".repeat(64)}",
             "FILE\t${Base64.encode("libvk.so".encodeToByteArray())}\t64\t${"c".repeat(64)}",
             "STAGE\t.stage-abc123",
-        ).joinToString("\n", postfix = "\n")
+        ).joinToString("\n")
 
         val prepared = DriverRepository.parsePreparedProtocol(output)
 
@@ -64,7 +64,9 @@ class DriverRepositoryTest {
         assertEquals("Turnip", prepared.metaJson["name"])
         assertEquals(setOf("meta.json", "libvk.so"), prepared.fileHashes.keys)
         assertEquals(".stage-abc123", prepared.stageName)
-        assertFailsWith<DriverStoreException> { DriverRepository.parsePreparedProtocol(output.dropLast(1)) }
+        assertFailsWith<DriverStoreException> {
+            DriverRepository.parsePreparedProtocol(output.substringBeforeLast("\n"))
+        }
     }
 
     @Test
