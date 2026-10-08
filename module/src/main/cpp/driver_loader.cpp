@@ -8,6 +8,9 @@
 #include "driver_identity.h"
 #include "driver_bundle.h"
 #include "driver_cache_path.h"
+#include "driver_stage_failure.h"
+#include "path_component.h"
+#include "graphics_environment.h"
 #include "adrenotools/driver.h"
 #if defined(__aarch64__)
 #include "android_linker_ns.h"
@@ -110,7 +113,7 @@ int openAbsoluteDirectory(const std::string &path) {
         size_t end = path.find('/', start);
         if (end == std::string::npos) end = path.size();
         std::string part = path.substr(start, end - start);
-        int next = component(part) ? openDirectory(fd, part) : -1;
+        int next = safePathComponent(part) ? openDirectory(fd, part) : -1;
         close(fd);
         fd = next;
         start = end + 1;
@@ -119,7 +122,7 @@ int openAbsoluteDirectory(const std::string &path) {
 }
 
 int openSafeFile(int directory, const std::string &name, off_t limit) {
-    if (!component(name)) {
+    if (!safeFileName(name)) {
         errno = EINVAL;
         return -1;
     }
@@ -145,7 +148,7 @@ bool validReceivedFile(int fd, off_t limit) {
 }
 
 int regularFile(int parent, const std::string &name, off_t limit) {
-    if (!component(name)) return -1;
+    if (!safeFileName(name)) return -1;
     Fd fd(openat(parent, name.c_str(), O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC));
     struct stat st{};
     if (fd.value < 0 || fstat(fd.value, &st) || !S_ISREG(st.st_mode) ||
@@ -216,20 +219,54 @@ int requestDriverFile(zygisk::Api *api, const std::string &driverId,
     return file;
 }
 
-int privateDirectory(int parent, const std::string &name, uid_t uid, gid_t gid, bool appFiles = false) {
+int privateDirectory(int parent, const std::string &name, uid_t uid, gid_t gid,
+                     bool appFiles, DriverStageFailure &failure) {
     bool created = mkdirat(parent, name.c_str(), 0700) == 0;
-    if (!created && errno != EEXIST) return -1;
+    if (!created && errno != EEXIST) {
+        failure.reject(name + ".mkdir", errno);
+        return -1;
+    }
     Fd fd(openDirectory(parent, name));
+    if (fd.value < 0) {
+        failure.reject(name + ".open", errno);
+        return -1;
+    }
     struct stat st{};
-    if (fd.value < 0 || fstat(fd.value, &st)) return -1;
-    if (created && st.st_uid != geteuid()) return -1;
-    if (created && (fchown(fd.value, uid, gid) || fchmod(fd.value, 0700))) return -1;
-    if (fstat(fd.value, &st)) return -1;
+    if (fstat(fd.value, &st)) {
+        failure.reject(name + ".fstat", errno);
+        return -1;
+    }
+    if (created && st.st_uid != geteuid()) {
+        failure.reject(name + ".created_owner", 0);
+        return -1;
+    }
+    if (created && fchown(fd.value, uid, gid)) {
+        failure.reject(name + ".chown", errno);
+        return -1;
+    }
+    if (created && fchmod(fd.value, 0700)) {
+        failure.reject(name + ".chmod", errno);
+        return -1;
+    }
+    if (fstat(fd.value, &st)) {
+        failure.reject(name + ".fstat_after_setup", errno);
+        return -1;
+    }
     const bool allowed = appFiles
         ? appFilesDirectoryMetadataAllowed(st.st_uid, st.st_gid, st.st_mode, uid, gid)
         : privateDirectoryMetadataAllowed(st.st_uid, st.st_gid, st.st_mode, uid, gid);
-    if (!allowed) return -1;
-    return dup(fd.value);
+    if (!allowed) {
+        failure.reject(name + ".metadata", 0);
+        return -1;
+    }
+    int duplicate = dup(fd.value);
+    if (duplicate < 0) failure.reject(name + ".dup", errno);
+    return duplicate;
+}
+
+int privateDirectory(int parent, const std::string &name, uid_t uid, gid_t gid, bool appFiles = false) {
+    DriverStageFailure ignored;
+    return privateDirectory(parent, name, uid, gid, appFiles, ignored);
 }
 
 mode_t expectedMode(StagedFileKind kind) {
@@ -237,30 +274,43 @@ mode_t expectedMode(StagedFileKind kind) {
 }
 
 bool copyFile(int source, int directory, const std::string &name, uid_t uid, gid_t gid,
-              StagedFileKind kind) {
+              StagedFileKind kind, DriverStageFailure &failure) {
+    const std::string stage = "copy." + name + ".";
     Fd target(openat(directory, name.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600));
-    if (target.value < 0) return false;
+    if (target.value < 0) return failure.reject(stage + "open", errno);
     struct stat st{};
-    if (fstat(source, &st)) return false;
+    if (fstat(source, &st)) return failure.reject(stage + "source_fstat", errno);
     char buffer[16384];
     off_t offset = 0;
     while (offset < st.st_size) {
         ssize_t n = pread(source, buffer, sizeof(buffer), offset);
         if (n < 0 && errno == EINTR) continue;
-        if (n <= 0 || n > st.st_size - offset) return false;
+        if (n <= 0 || n > st.st_size - offset) return failure.reject(stage + "source_read", n < 0 ? errno : 0);
         ssize_t written = 0;
         while (written < n) {
             ssize_t count = write(target.value, buffer + written, n - written);
             if (count < 0 && errno == EINTR) continue;
-            if (count <= 0) return false;
+            if (count <= 0) return failure.reject(stage + "target_write", count < 0 ? errno : 0);
             written += count;
         }
         offset += n;
     }
-    if (fchown(target.value, uid, gid) || fchmod(target.value, expectedMode(kind)) || fsync(target.value)) return false;
+    if (fchown(target.value, uid, gid)) return failure.reject(stage + "chown", errno);
+    if (fchmod(target.value, expectedMode(kind))) return failure.reject(stage + "chmod", errno);
+    if (fsync(target.value)) return failure.reject(stage + "fsync", errno);
     struct stat staged{};
-    return fstat(target.value, &staged) == 0 && staged.st_uid == uid && staged.st_gid == gid &&
-        !(staged.st_mode & 0022) && stagedFileModeAllowed(kind, staged.st_mode);
+    if (fstat(target.value, &staged)) return failure.reject(stage + "target_fstat", errno);
+    if (staged.st_uid != uid || staged.st_gid != gid || (staged.st_mode & 0022) ||
+        !stagedFileModeAllowed(kind, staged.st_mode)) {
+        return failure.reject(stage + "target_metadata", 0);
+    }
+    return true;
+}
+
+bool copyFile(int source, int directory, const std::string &name, uid_t uid, gid_t gid,
+              StagedFileKind kind) {
+    DriverStageFailure ignored;
+    return copyFile(source, directory, name, uid, gid, kind, ignored);
 }
 
 bool sameFile(int source, int directory, const std::string &name, uid_t uid, gid_t gid,
@@ -281,55 +331,75 @@ bool sameFile(int source, int directory, const std::string &name, uid_t uid, gid
 }
 
 bool stageDriver(const std::string &data, const DriverSelection &selection, uid_t uid, gid_t gid,
-                 int metadata, const std::vector<BundleLibrary> &libraries, std::string &path, std::string &basePath) {
+                 int metadata, const std::vector<BundleLibrary> &libraries, std::string &path,
+                 std::string &basePath, DriverStageFailure &failure) {
     // Android may alias /data/user/0 to /data/data; resolve only the Zygisk-provided base.
     char canonical[PATH_MAX];
-    if (!appDataPathAllowed(data, selection.packageName, uid)) return false;
+    if (!appDataPathAllowed(data, selection.packageName, uid)) return failure.reject("app_data.path", 0);
     if (!realpath(data.c_str(), canonical)) {
         // Direct Boot can launch apps before credential-encrypted storage is mounted.
         std::string deviceProtected = "/data/user_de/" + std::to_string(uid / 100000) + "/" + selection.packageName;
-        if (!realpath(deviceProtected.c_str(), canonical)) return false;
+        if (!realpath(deviceProtected.c_str(), canonical)) return failure.reject("app_data.realpath", errno);
     }
     std::string base(canonical);
     basePath = base;
-    if (!appDataPathAllowed(base, selection.packageName, uid)) return false;
+    if (!appDataPathAllowed(base, selection.packageName, uid)) return failure.reject("app_data.canonical_path", 0);
     Fd app(openAbsoluteDirectory(base));
+    if (app.value < 0) return failure.reject("app_data.open_directory", errno);
     struct stat st{};
-    if (app.value < 0 || fstat(app.value, &st) || st.st_uid != uid) return false;
+    if (fstat(app.value, &st)) return failure.reject("app_data.fstat", errno);
+    if (st.st_uid != uid) return failure.reject("app_data.owner", 0);
     // Android-owned files directories can be 0771; module-owned descendants must remain 0700.
-    Fd files(privateDirectory(app.value, "files", uid, gid, true));
-    Fd module(privateDirectory(files.value, MODULE_ID, uid, gid));
-    Fd parent(privateDirectory(module.value, "gpu-driver", uid, gid));
+    Fd files(privateDirectory(app.value, "files", uid, gid, true, failure));
+    if (files.value < 0) return false;
+    Fd module(privateDirectory(files.value, MODULE_ID, uid, gid, false, failure));
+    if (module.value < 0) return false;
+    Fd parent(privateDirectory(module.value, "gpu-driver", uid, gid, false, failure));
     if (parent.value < 0) return false;
     const std::string cache = driverCacheComponent(selection.driverId);
-    if (cache.empty()) return false;
+    if (cache.empty()) return failure.reject("cache.path_component", 0);
     path = base + "/files/" MODULE_ID "/gpu-driver/" + cache + "/";
     std::vector<std::string> expectedFiles{"meta.json"};
     for (const auto &library : libraries) expectedFiles.push_back(library.name);
     auto matches = [&](int directory) {
-        if (!bundleCacheMatches(directory, expectedFiles)) return false;
-        if (!sameFile(metadata, directory, "meta.json", uid, gid, StagedFileKind::Metadata)) return false;
+        errno = 0;
+        if (!bundleCacheMatches(directory, expectedFiles)) return failure.reject("cache.file_set", errno);
+        errno = 0;
+        if (!sameFile(metadata, directory, "meta.json", uid, gid, StagedFileKind::Metadata)) {
+            return failure.reject("cache.meta.json", errno);
+        }
         for (const auto &library : libraries) {
-            if (!sameFile(library.fd, directory, library.name, uid, gid, StagedFileKind::NativeLibrary)) return false;
+            errno = 0;
+            if (!sameFile(library.fd, directory, library.name, uid, gid, StagedFileKind::NativeLibrary)) {
+                return failure.reject("cache." + library.name, errno);
+            }
         }
         return true;
     };
     Fd existing(openDirectory(parent.value, cache));
     if (existing.value >= 0) {
-        return fstat(existing.value, &st) == 0 && st.st_uid == uid && st.st_gid == gid &&
-            (st.st_mode & 07777) == 0700 &&
-            matches(existing.value);
+        if (fstat(existing.value, &st)) return failure.reject("cache.directory.fstat", errno);
+        if (st.st_uid != uid || st.st_gid != gid || (st.st_mode & 07777) != 0700) {
+            return failure.reject("cache.directory.metadata", 0);
+        }
+        return matches(existing.value);
     }
     std::string temporary = ".stage-" + std::to_string(getpid());
-    if (mkdirat(parent.value, temporary.c_str(), 0700)) return false;
+    if (mkdirat(parent.value, temporary.c_str(), 0700)) return failure.reject("staging.mkdir", errno);
     Fd staging(openDirectory(parent.value, temporary));
-    if (staging.value < 0 || fchmod(staging.value, 0700) || fstat(staging.value, &st) ||
-        st.st_uid != geteuid() || (st.st_mode & 0077)) return false;
-    bool ready = copyFile(metadata, staging.value, "meta.json", uid, gid, StagedFileKind::Metadata);
+    if (staging.value < 0) return failure.reject("staging.open", errno);
+    if (fchmod(staging.value, 0700)) return failure.reject("staging.chmod", errno);
+    if (fstat(staging.value, &st)) return failure.reject("staging.fstat", errno);
+    if (st.st_uid != geteuid() || (st.st_mode & 0077)) return failure.reject("staging.metadata", 0);
+    bool ready = copyFile(metadata, staging.value, "meta.json", uid, gid, StagedFileKind::Metadata, failure);
     for (const auto &library : libraries) {
-        ready = ready && copyFile(library.fd, staging.value, library.name, uid, gid, StagedFileKind::NativeLibrary);
+        ready = ready && copyFile(library.fd, staging.value, library.name, uid, gid,
+                                  StagedFileKind::NativeLibrary, failure);
     }
-    ready = ready && fsync(staging.value) == 0;
+    if (ready && fsync(staging.value)) {
+        failure.reject("staging.fsync", errno);
+        ready = false;
+    }
     if (!ready) {
         unlinkat(staging.value, "meta.json", 0);
         for (const auto &library : libraries) unlinkat(staging.value, library.name.c_str(), 0);
@@ -337,19 +407,25 @@ bool stageDriver(const std::string &data, const DriverSelection &selection, uid_
         return false;
     }
     // Never replace an app-controlled destination or publish into a concurrently created directory.
-    if (fchown(staging.value, uid, gid)) return false;
+    if (fchown(staging.value, uid, gid)) return failure.reject("staging.chown", errno);
     if (syscall(SYS_renameat2, parent.value, temporary.c_str(), parent.value,
                 cache.c_str(), 1 /* RENAME_NOREPLACE */) == 0) {
         Fd published(openDirectory(parent.value, cache));
         struct stat actual{}, expected{};
-        return published.value >= 0 && fstat(published.value, &actual) == 0 && actual.st_uid == uid &&
-            actual.st_gid == gid && (actual.st_mode & 07777) == 0700 &&
-            fstat(staging.value, &expected) == 0 && actual.st_dev == expected.st_dev &&
-            actual.st_ino == expected.st_ino && fsync(parent.value) == 0 &&
-            matches(published.value);
+        if (published.value < 0) return failure.reject("published_cache.open", errno);
+        if (fstat(published.value, &actual)) return failure.reject("published_cache.fstat", errno);
+        if (actual.st_uid != uid || actual.st_gid != gid || (actual.st_mode & 07777) != 0700) {
+            return failure.reject("published_cache.metadata", 0);
+        }
+        if (fstat(staging.value, &expected)) return failure.reject("staging.published_fstat", errno);
+        if (actual.st_dev != expected.st_dev || actual.st_ino != expected.st_ino) {
+            return failure.reject("published_cache.identity", 0);
+        }
+        if (fsync(parent.value)) return failure.reject("published_cache.parent_fsync", errno);
+        return matches(published.value);
     }
     // Once app-owned, leave the temporary directory untouched on failure.
-    return false;
+    return failure.reject("cache.publish_rename", errno);
 }
 
 uint64_t contentHash(int first, int second) {
@@ -469,7 +545,7 @@ DriverLoadResult prepareDriver([[maybe_unused]] zygisk::Api *api, [[maybe_unused
     Json doc(text);
     std::string name = stringValue(yyjson_obj_get(doc.root(), "libraryName"));
     std::string abi = stringValue(yyjson_obj_get(doc.root(), "abi"));
-    if (!component(name) || name == "meta.json" || (!abi.empty() && abi != "arm64-v8a")) {
+    if (!safeFileName(name) || name == "meta.json" || (!abi.empty() && abi != "arm64-v8a")) {
         result.reason = "invalid libraryName or metadata ABI";
         return result;
     }
@@ -531,8 +607,9 @@ DriverLoadResult prepareDriver([[maybe_unused]] zygisk::Api *api, [[maybe_unused
 }
 
 void serveDriverPreparation(int socket) {
-    auto fail = [&](const char *reason) {
-        __android_log_print(ANDROID_LOG_WARN, LogTag, "root preparation failed: %s errno=%d", reason, errno);
+    auto fail = [&](const char *reason, int error = -1) {
+        const int reportedError = error >= 0 ? error : errno;
+        __android_log_print(ANDROID_LOG_WARN, LogTag, "root preparation failed: %s errno=%d", reason, reportedError);
         companion_fd::sendText(socket, std::string("{\"error\":\"") + reason + "\"}", 16384);
     };
 #if defined(__aarch64__)
@@ -543,7 +620,7 @@ void serveDriverPreparation(int socket) {
     std::string id = stringValue(yyjson_obj_get(input.root(), "driverId"));
     auto *uidValue = yyjson_obj_get(input.root(), "uid");
     auto *gidValue = yyjson_obj_get(input.root(), "gid");
-    if (!component(package) || package.find(':') != std::string::npos || !component(id) ||
+    if (!safePathComponent(package) || package.find(':') != std::string::npos || !safePathComponent(id) ||
         !yyjson_is_uint(uidValue) || !yyjson_is_uint(gidValue) || yyjson_get_uint(uidValue) > UINT32_MAX ||
         yyjson_get_uint(uidValue) < 10000 || yyjson_get_uint(uidValue) != yyjson_get_uint(gidValue)) {
         fail("invalid package or target identity"); return;
@@ -567,7 +644,7 @@ void serveDriverPreparation(int socket) {
     Json meta(text);
     std::string name = stringValue(yyjson_obj_get(meta.root(), "libraryName"));
     std::string abi = stringValue(yyjson_obj_get(meta.root(), "abi"));
-    if (!component(name) || name == "meta.json" || (!abi.empty() && abi != "arm64-v8a")) {
+    if (!safeFileName(name) || name == "meta.json" || (!abi.empty() && abi != "arm64-v8a")) {
         fail("invalid driver library name or ABI"); return;
     }
     Fd library(openSafeFile(driver.value, name, MaxLibraryBytes));
@@ -579,8 +656,11 @@ void serveDriverPreparation(int socket) {
     DriverSelection selection{{DriverLoadStatus::InvalidDriver, {}, {}, {}}, package, id};
     std::string data = "/data/user/" + std::to_string(uid / 100000) + "/" + package;
     std::string directory, base, hookDirectory;
-    if (!stageDriver(data, selection, uid, gid, metadata.value, libraries, directory, base)) {
-        fail("root private driver staging failed"); return;
+    DriverStageFailure stageFailure;
+    if (!stageDriver(data, selection, uid, gid, metadata.value, libraries, directory, base, stageFailure)) {
+        std::string reason = "root private driver staging failed; " + stageFailure.message();
+        fail(reason.c_str(), stageFailure.error);
+        return;
     }
     Fd sourceModule(openAbsoluteDirectory("/data/adb/modules/" MODULE_ID));
     Fd sourceHooks(openDirectory(sourceModule.value, "zygisk"));
@@ -619,7 +699,7 @@ const char *statusName(DriverLoadStatus status) {
 DriverSelection selectDriver(const std::string &config, const std::string &process) {
     DriverSelection selection{{DriverLoadStatus::NotTargeted, "package not targeted", {}, {}},
                               process.substr(0, process.find(':')), {}};
-    if (process == "system_server" || !component(selection.packageName)) return selection;
+    if (process == "system_server" || !safePathComponent(selection.packageName)) return selection;
     Json doc(config);
     yyjson_val *root = doc.root();
     if (!yyjson_is_obj(root)) {
@@ -646,15 +726,15 @@ DriverSelection selectDriver(const std::string &config, const std::string &proce
     }
     selection.driverId = stringValue(binding);
     selection.result = {DriverLoadStatus::InvalidDriver, "invalid driverId", {}, {}};
-    if (!component(selection.driverId)) selection.driverId.clear();
+    if (!safePathComponent(selection.driverId)) selection.driverId.clear();
     return selection;
 }
 
 void serveDriverFile(int socket, uint8_t opcode) {
     companion_fd::FileRequest request;
     if (!companion_fd::receiveFileRequest(socket, request, opcode) ||
-        request.opcode != OpenDriverOpcode || !component(request.driverId) ||
-        !component(request.fileName) ||
+        request.opcode != OpenDriverOpcode || !safePathComponent(request.driverId) ||
+        !safeFileName(request.fileName) ||
         (request.kind != companion_fd::MetadataFile && request.kind != companion_fd::LibraryFile) ||
         (request.kind == companion_fd::MetadataFile && request.fileName != "meta.json") ||
         (request.kind == companion_fd::LibraryFile && request.fileName == "meta.json")) {
@@ -724,7 +804,7 @@ const Prepared &DriverLoader::prepare(zygisk::Api *api, const DriverSelection &s
     return prepared;
 }
 
-const DriverLoadResult &DriverLoader::activate(zygisk::Api *api, const Prepared &ready) {
+const DriverLoadResult &DriverLoader::activate(zygisk::Api *api, const Prepared &ready, JNIEnv *env) {
     if (ready.result.status != DriverLoadStatus::Prepared) return result;
     if (activationAttempted) return result;
     activationAttempted = true;

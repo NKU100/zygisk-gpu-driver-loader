@@ -7,6 +7,13 @@ trap 'rm -r "$native_test_dir"' EXIT
 cd "$repo_dir"
 tests=module/src/main/cpp/tests
 
+c++ -std=c++20 "$tests/hwui_property_override_test.cpp" -o "$native_test_dir/hwui-property"
+"$native_test_dir/hwui-property"
+
+c++ -std=c++20 "$tests/driver_stage_failure_test.cpp" -o "$native_test_dir/stage-failure"
+"$native_test_dir/stage-failure"
+c++ -std=c++20 "$tests/path_component_test.cpp" -o "$native_test_dir/path-component"
+"$native_test_dir/path-component"
 c++ -std=c++20 "$tests/driver_device_eligibility_test.cpp" -o "$native_test_dir/eligibility"
 "$native_test_dir/eligibility"
 c++ -std=c++20 -pthread "$tests/companion_fd_transfer_test.cpp" module/src/main/cpp/companion_fd.cpp -o "$native_test_dir/companion"
