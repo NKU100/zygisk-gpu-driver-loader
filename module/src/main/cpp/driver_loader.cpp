@@ -51,6 +51,8 @@ constexpr size_t MaxMetadataBytes = 64 * 1024;
 #if defined(__aarch64__)
 using LoadSphalLibrary = void *(*)(const char *, int);
 LoadSphalLibrary originalLoadSphalLibrary = nullptr;
+using LoadLibraryExt = void *(*)(const char *, int, const android_dlextinfo *);
+LoadLibraryExt originalLoadLibraryExt = nullptr;
 struct stat selectedDriverIdentity{};
 std::string selectedDriverPath;
 
@@ -69,6 +71,24 @@ void *loadSphalLibrary(const char *filename, int flags) {
         filename ? filename : "<null>", statusName(routed.status), selectedDriverPath.c_str());
     if (runtimeLogSink) runtimeLogSink(priority, message);
     else __android_log_print(priority, LogTag, "%s", message);
+    return routed.handle;
+}
+
+void *loadLibraryExt(const char *filename, int flags, const android_dlextinfo *extinfo) {
+    if (!filename || !std::string_view(filename).starts_with("vulkan.") || !extinfo ||
+        !(extinfo->flags & ANDROID_DLEXT_USE_NAMESPACE) || !extinfo->library_namespace) {
+        return originalLoadLibraryExt ? originalLoadLibraryExt(filename, flags, extinfo) : nullptr;
+    }
+    auto routed = routeVulkanDriver(filename, flags,
+        [extinfo](const char *name, int mode) { return hook_android_dlopen_ext(name, mode, extinfo); },
+        [](const char *name, int mode) -> void * {
+            return originalLoadSphalLibrary ? originalLoadSphalLibrary(name, mode) : nullptr;
+        }, identifyDriver);
+    char message[2048];
+    snprintf(message, sizeof(message), "namespace driver request=%s status=%s selectedPath=%s",
+        filename, statusName(routed.status), selectedDriverPath.c_str());
+    if (runtimeLogSink) runtimeLogSink(routed.status == DriverLoadStatus::Loaded ?
+        ANDROID_LOG_INFO : ANDROID_LOG_WARN, message);
     return routed.handle;
 }
 #endif
@@ -90,15 +110,6 @@ struct Json {
 
 std::string stringValue(yyjson_val *value) {
     return yyjson_is_str(value) ? std::string(yyjson_get_str(value), yyjson_get_len(value)) : "";
-}
-
-bool component(const std::string &name) {
-    if (name.empty() || name.size() > NAME_MAX || name == "." || name == "..") return false;
-    for (unsigned char c : name) {
-        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-              (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-' || c == ':')) return false;
-    }
-    return true;
 }
 
 int openDirectory(int parent, const std::string &name) {
@@ -832,6 +843,9 @@ const DriverLoadResult &DriverLoader::activate(zygisk::Api *api, const Prepared 
     api->pltHookRegister(loaderIdentity.st_dev, loaderIdentity.st_ino,
         "android_load_sphal_library", reinterpret_cast<void *>(loadSphalLibrary),
         reinterpret_cast<void **>(&originalLoadSphalLibrary));
+    api->pltHookRegister(loaderIdentity.st_dev, loaderIdentity.st_ino,
+        "android_dlopen_ext", reinterpret_cast<void *>(loadLibraryExt),
+        reinterpret_cast<void **>(&originalLoadLibraryExt));
     bool committed = api->pltHookCommit();
     if (!committed || !originalLoadSphalLibrary) {
         result.reason = "system Vulkan loader PLT interception failed or symbol was not found";
@@ -839,10 +853,22 @@ const DriverLoadResult &DriverLoader::activate(zygisk::Api *api, const Prepared 
     }
     result.status = DriverLoadStatus::HookInstalled;
     result.reason = "system Vulkan loader interception installed; waiting for a verified driver request";
+    if (originalLoadLibraryExt && env) {
+        std::string hwuiReason;
+        if (!configureHwuiGles(api, hwuiReason)) {
+            result.reason += "; " + hwuiReason;
+            return result;
+        }
+        result.reason += "; " + hwuiReason;
+        std::string namespaceReason;
+        configureGraphicsEnvironment(api, env, ready.driverDirectory, namespaceReason);
+        result.reason += "; " + namespaceReason;
+    }
 #else
     result.status = DriverLoadStatus::UnsupportedDevice;
     result.reason = "custom Vulkan drivers are supported only on arm64";
     (void)api;
+    (void)env;
 #endif
     return result;
 }

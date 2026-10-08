@@ -12,6 +12,10 @@
 
 已有验证覆盖 Redmi 23117RK66C、Android API 36、Adreno 750、KernelSU / Zygisk Next 上的 Unity Vulkan 场景和独立 Vulkan 探针。探针完成了设备创建、队列提交及缓冲区回读，Unity 场景使用了私有 Turnip 驱动并显示画面。
 
+一加 13（PJZ110、Android API 36、Adreno 830、KernelSU / Zygisk Next）已验证 CapsViewer 4.13 加载 Turnip A8XX Draft，显示 Vulkan 1.4.335、驱动版本 25.99.99，并通过重复冷启动及切回系统驱动的检查。这项验证覆盖能力查询，不代表全部 Vulkan 渲染场景兼容。
+
+对于启动前已预加载系统 Vulkan 驱动的进程，模块使用框架驱动命名空间触发重新加载。该路径将目标进程的 Android HWUI 后端设为 GLES，并让 EGL 保持系统驱动；应用自身的 Vulkan 请求仍使用选中的驱动。处理仅作用于目标进程，不修改系统全局属性或 vendor 文件。
+
 这些结果不能推广到全部设备、应用和驱动。Unity 验证中仍观察到扩展启用依赖错误，因此不宣称完整 VRS 功能通过。DevCheck 的自定义驱动场景曾出现闪退，不列为已验证兼容应用。Magisk 模拟器验证过模块安装、配置界面和不适用设备的安全退出，未验证 Adreno 驱动运行。
 
 ## 驱动包格式

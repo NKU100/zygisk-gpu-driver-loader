@@ -269,7 +269,7 @@ public:
 
     void postAppSpecialize(const AppSpecializeArgs *) override {
         if (prepared.result.status != gpu::DriverLoadStatus::Prepared) return;
-        const auto &result = driverLoader.activate(api, prepared);
+        const auto &result = driverLoader.activate(api, prepared, env);
         std::string diagnostic = "target=" + targetPackage + " process=" + processName +
             " status=" + gpu::statusName(result.status) + " reason=" + result.reason +
             " driverPath=" + result.driverPath + " hookPath=" + result.hookPath;

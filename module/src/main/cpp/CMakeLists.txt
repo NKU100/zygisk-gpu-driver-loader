@@ -8,6 +8,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CXX_FLAGS}")
 add_library(${MODULE_NAME} SHARED
         example.cpp
         driver_loader.cpp
+        graphics_environment.cpp
         companion_fd.cpp
         external/yyjson.c
 )

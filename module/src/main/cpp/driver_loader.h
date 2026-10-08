@@ -5,6 +5,11 @@
 #include <string_view>
 #include <sys/stat.h>
 #include <sys/types.h>
+#if defined(__ANDROID__)
+#include <jni.h>
+#else
+struct JNIEnv;
+#endif
 
 namespace zygisk { struct Api; }
 
@@ -132,7 +137,7 @@ class DriverLoader {
 public:
     const Prepared &prepare(zygisk::Api *api, const DriverSelection &selection,
                             const std::string &appDataDir, uid_t uid, gid_t gid);
-    const DriverLoadResult &activate(zygisk::Api *api, const Prepared &prepared);
+    const DriverLoadResult &activate(zygisk::Api *api, const Prepared &prepared, JNIEnv *env = nullptr);
     const DriverLoadResult &load(zygisk::Api *api, const DriverSelection &selection,
                                  const std::string &appDataDir, uid_t uid, gid_t gid);
 private:
