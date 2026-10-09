@@ -36,6 +36,8 @@ files retain that license:
 
 The source reference is [KernelSU commit
 402a5be64521888e631ac6a8194e97ce66d5297f](https://github.com/tiann/KernelSU/tree/402a5be64521888e631ac6a8194e97ce66d5297f).
+The floating bottom bar rendering also tracks [KernelSU v3.3.0
+(commit 932014ab5b2c9b74a3d11e2ec4d17dd10fc9442e)](https://github.com/tiann/KernelSU/tree/932014ab5b2c9b74a3d11e2ec4d17dd10fc9442e).
 The full license text is in `LICENSES/GPL-3.0-or-later.txt`.
 
 ## Third-party components
