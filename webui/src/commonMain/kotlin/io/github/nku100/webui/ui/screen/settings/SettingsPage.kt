@@ -4,6 +4,9 @@ import zygisk_module_webui_template.webui.generated.resources.*
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.add
@@ -23,10 +26,14 @@ import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.WaterDrop
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.rounded.Update
@@ -39,6 +46,9 @@ import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.basic.Slider
+import top.yukonga.miuix.kmp.basic.SliderDefaults
+import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.preference.ArrowPreference
@@ -47,6 +57,7 @@ import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+import kotlin.math.roundToInt
 
 @Composable
 fun SettingsPage(
@@ -136,6 +147,61 @@ fun SettingsPage(
                             actions.onThemeModeChange(ThemeMode.entries[index])
                         }
                     )
+                    SwitchPreference(
+                        title = stringResource(Res.string.dynamic_colors),
+                        summary = stringResource(Res.string.dynamic_colors_summary),
+                        checked = uiState.enableMonet,
+                        onCheckedChange = actions.onEnableMonetChange,
+                    )
+                }
+            }
+
+            item {
+                Card(
+                    modifier = Modifier
+                        .padding(top = 12.dp)
+                        .fillMaxWidth(),
+                ) {
+                    var sliderValue by remember(uiState.pageScale) {
+                        mutableFloatStateOf(uiState.pageScale.coerceIn(0.8f, 1.1f))
+                    }
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = stringResource(Res.string.page_scale),
+                                    color = colorScheme.onBackground,
+                                )
+                                Text(
+                                    text = stringResource(Res.string.page_scale_summary),
+                                    color = colorScheme.onSurfaceVariantSummary,
+                                )
+                            }
+                            Text(
+                                text = "${(sliderValue * 100).roundToInt()}%",
+                                color = colorScheme.onSurfaceVariantActions,
+                            )
+                        }
+                        Slider(
+                            value = sliderValue,
+                            onValueChange = { sliderValue = it },
+                            onValueChangeFinished = { actions.onPageScaleChange(sliderValue) },
+                            valueRange = 0.8f..1.1f,
+                            showKeyPoints = true,
+                            keyPoints = listOf(0.8f, 0.9f, 1f, 1.1f),
+                            magnetThreshold = 0.01f,
+                            hapticEffect = SliderDefaults.SliderHapticEffect.Step,
+                        )
+                    }
                 }
             }
 
@@ -225,6 +291,12 @@ fun SettingsPage(
                             onCheckedChange = actions.onEnableFloatingBottomBarBlurChange
                         )
                     }
+                    SwitchPreference(
+                        title = stringResource(Res.string.navigation_badge),
+                        summary = stringResource(Res.string.navigation_badge_summary),
+                        checked = uiState.enableNavigationBadge,
+                        onCheckedChange = actions.onNavigationBadgeChange,
+                    )
                 }
             }
 

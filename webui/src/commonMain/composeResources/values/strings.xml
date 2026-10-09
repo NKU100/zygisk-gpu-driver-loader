@@ -94,4 +94,10 @@
     <string name="root_unavailable">Root unavailable or denied · Tap to retry</string>
     <string name="root_list_failed">Unable to load applications through root</string>
     <string name="root_retry_hint">Allow root access in your root manager, then tap to retry. If already allowed, check the root shell can query packages.</string>
+    <string name="dynamic_colors">Dynamic Colors</string>
+    <string name="dynamic_colors_summary">Use system colors; turn off for the default Miuix palette</string>
+    <string name="page_scale">Page scale</string>
+    <string name="page_scale_summary">Adjust text and layout size</string>
+    <string name="navigation_badge">Navigation badge</string>
+    <string name="navigation_badge_summary">Show selected target app count on the Apps tab</string>
 </resources>

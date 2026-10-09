@@ -18,8 +18,12 @@ data class ModuleConfig(
     val packageSettings: Map<String, PackageSettings> = emptyMap(),
     /** Theme mode: FOLLOW_SYSTEM, LIGHT, DARK */
     val themeMode: String = "FOLLOW_SYSTEM",
-    /** Color style: DYNAMIC, DEFAULT, TEAL, ORANGE, PINK */
-    val colorStyle: String = "DEFAULT",
+    /** Use system dynamic colors instead of the default Miuix palette. */
+    val enableMonet: Boolean = true,
+    /** Scale all Miuix UI dimensions and text, from 80% to 110%. */
+    val pageScale: Float = 1f,
+    /** Show the selected target app count on the Apps tab. */
+    val enableNavigationBadge: Boolean = true,
     /** Enable blur effects */
     val enableBlur: Boolean = true,
     /** Enable floating bottom bar */

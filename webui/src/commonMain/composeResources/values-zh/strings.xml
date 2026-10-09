@@ -94,4 +94,10 @@
     <string name="root_unavailable">未获得 root 权限 · 点击重试</string>
     <string name="root_list_failed">无法通过 root 获取应用列表</string>
     <string name="root_retry_hint">请在 root 管理器中允许授权，然后点击重试。若已授权，请检查 root shell 是否可查询应用。</string>
+    <string name="dynamic_colors">动态配色</string>
+    <string name="dynamic_colors_summary">使用系统配色；关闭后使用 Miuix 默认配色</string>
+    <string name="page_scale">页面缩放</string>
+    <string name="page_scale_summary">调整界面文字和布局大小</string>
+    <string name="navigation_badge">导航角标</string>
+    <string name="navigation_badge_summary">在应用页显示已选目标应用数量</string>
 </resources>

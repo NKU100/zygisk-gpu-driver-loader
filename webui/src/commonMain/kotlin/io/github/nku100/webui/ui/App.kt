@@ -40,7 +40,11 @@ fun App() {
     val navigator = rememberNavigator(Route.Main)
     val mainPagerStateHolder = remember { mutableStateOf<MainPagerState?>(null) }
 
-    AppTheme(themeMode = uiState.themeMode) {
+    AppTheme(
+        themeMode = uiState.themeMode,
+        enableMonet = uiState.config.enableMonet,
+        pageScale = uiState.config.pageScale,
+    ) {
         CompositionLocalProvider(LocalNavigator provides navigator) {
             // Must be at App level so it survives route navigation (MainScreen unmounts on push)
             BrowserHistorySync(navigator = navigator, mainPagerState = mainPagerStateHolder.value)

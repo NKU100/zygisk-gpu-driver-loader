@@ -34,6 +34,8 @@ import io.github.nku100.webui.ui.util.defaultBlurEffect
 import io.github.nku100.webui.ui.util.rememberContentReady
 import io.github.nku100.webui.ui.util.rememberDefaultBlurBackdrop
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.Badge
+import top.yukonga.miuix.kmp.basic.BadgedBox
 import top.yukonga.miuix.kmp.basic.NavigationBar
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.NavigationItem
@@ -53,6 +55,7 @@ fun MainScreen(viewModel: MainViewModel, uiState: MainUiState, onPagerStateReady
     val scope = rememberCoroutineScope()
 
     val config = uiState.config
+    val targetAppCount = config.targetPackages.toSet().size
     val enableFloatingBottomBar = config.enableFloatingBottomBar
     val enableFloatingBottomBarBlur = config.enableFloatingBottomBarBlur && enableFloatingBottomBar
 
@@ -104,15 +107,25 @@ fun MainScreen(viewModel: MainViewModel, uiState: MainUiState, onPagerStateReady
                     isBlurEnabled = enableFloatingBottomBarBlur,
                 ) { activateTab ->
                     items.forEachIndexed { index, item ->
+                        val badge = targetAppCountBadge(
+                            count = targetAppCount.takeIf {
+                                config.enableNavigationBadge && index == BottomTab.APPS.ordinal
+                            } ?: 0,
+                            floating = true,
+                        )
                         FloatingBottomBarItem(
                             selected = mainPagerState.selectedPage == index,
                             onClick = { activateTab(index) },
                             modifier = Modifier.defaultMinSize(minWidth = 76.dp)
                         ) {
-                            Icon(
-                                imageVector = item.icon,
-                                contentDescription = item.label
-                            )
+                            val icon: @Composable () -> Unit = {
+                                Icon(imageVector = item.icon, contentDescription = item.label)
+                            }
+                            if (badge != null) {
+                                BadgedBox(badge = { badge() }) { icon() }
+                            } else {
+                                icon()
+                            }
                             Text(
                                 text = item.label,
                                 fontSize = 11.sp,
@@ -132,12 +145,19 @@ fun MainScreen(viewModel: MainViewModel, uiState: MainUiState, onPagerStateReady
                     color = if (config.enableBlur) Color.Transparent else MiuixTheme.colorScheme.surface,
                     content = {
                         items.forEachIndexed { index, item ->
+                            val badge = targetAppCountBadge(
+                                count = targetAppCount.takeIf {
+                                    config.enableNavigationBadge && index == BottomTab.APPS.ordinal
+                                } ?: 0,
+                                floating = false,
+                            )
                             NavigationBarItem(
                                 modifier = Modifier.weight(1f),
                                 icon = item.icon,
                                 label = item.label,
                                 selected = mainPagerState.selectedPage == index,
-                                onClick = { mainPagerState.animateToPage(index) }
+                                onClick = { mainPagerState.animateToPage(index) },
+                                badge = badge,
                             )
                         }
                     }
@@ -184,6 +204,20 @@ fun MainScreen(viewModel: MainViewModel, uiState: MainUiState, onPagerStateReady
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun targetAppCountBadge(count: Int, floating: Boolean): (@Composable () -> Unit)? {
+    if (count <= 0) return null
+    val colors = MiuixTheme.colorScheme
+    val background = if (floating) colors.primaryContainer else colors.primary
+    val content = if (floating) colors.onPrimaryContainer else colors.onPrimary
+    val label = if (count > 99) "99+" else count.toString()
+    return {
+        Badge(containerColor = background, contentColor = content) {
+            Text(text = label, fontSize = 9.sp, lineHeight = 11.sp)
         }
     }
 }
