@@ -21,6 +21,8 @@ data class DriverDirectory(val path: String, val entries: List<DriverPathEntry>)
 
 data class DriverPathEntry(val name: String, val isDirectory: Boolean)
 
+data class DriverDownloadProgress(val downloadedBytes: Long, val totalBytes: Long)
+
 enum class DriverPathError { INVALID_PATH, ACCESS_DENIED, STORAGE_ERROR }
 
 class DriverPathException(val error: DriverPathError) : Exception(error.name)

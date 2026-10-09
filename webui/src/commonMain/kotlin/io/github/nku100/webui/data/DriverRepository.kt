@@ -4,6 +4,7 @@ import io.github.nku100.webui.ModuleInfo
 import io.github.nku100.webui.platform.PlatformBridge
 import io.github.nku100.webui.platform.ShellResult
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -63,8 +64,87 @@ object DriverRepository {
         path: String,
         importedAtEpochMillis: Long,
         execute: RootCommand,
+    ): DriverImportResult = importDriverArchive(path, importedAtEpochMillis, execute, null, null)
+
+    suspend fun downloadAndImportDriver(
+        asset: DriverReleaseAsset,
+        onProgress: (DriverDownloadProgress) -> Unit,
+        onImporting: () -> Unit,
     ): DriverImportResult {
+        if (asset.sizeBytes !in 1..DriverSources.MAX_ARCHIVE_BYTES ||
+            !DriverSources.isTrustedDownloadUrl(asset.repository, asset.downloadUrl)) {
+            return DriverImportResult.Rejected(DriverArchiveError.TRANSFER_FAILED)
+        }
         val operationNonce = nonce()
+        val downloadPath = "$root/.download-$operationNonce.zip"
+        val partialPath = "$downloadPath.part"
+        val pidPath = "$root/.download-$operationNonce.pid"
+        val statusPath = "$root/.download-$operationNonce.status"
+        val execute: RootCommand = PlatformBridge::exec
+        var runnerPid = ""
+        var downloadFinished = false
+        try {
+            val started = execute(startDownloadCommand(asset, partialPath, downloadPath, pidPath, statusPath))
+            if (started.errno != 0) return DriverImportResult.Rejected(DriverArchiveError.TRANSFER_FAILED)
+            runnerPid = started.stdout.trim().lineSequence().lastOrNull().orEmpty()
+            if (!runnerPid.matches(Regex("[0-9]+"))) {
+                return DriverImportResult.Rejected(DriverArchiveError.TRANSFER_FAILED)
+            }
+            repeat(600) {
+                delay(500)
+                val poll = execute(downloadProgressCommand(partialPath, downloadPath, statusPath))
+                if (poll.errno != 0) return DriverImportResult.Rejected(DriverArchiveError.TRANSFER_FAILED)
+                val fields = poll.stdout.trim().lines()
+                val status = fields.getOrNull(0).orEmpty().trim()
+                val bytes = fields.getOrNull(1)?.trim()?.toLongOrNull() ?: 0L
+                if (bytes > asset.sizeBytes || bytes > DriverSources.MAX_ARCHIVE_BYTES) {
+                    return DriverImportResult.Rejected(DriverArchiveError.TRANSFER_FAILED)
+                }
+                onProgress(DriverDownloadProgress(bytes.coerceAtMost(asset.sizeBytes), asset.sizeBytes))
+                when (status) {
+                    "DONE" -> {
+                        downloadFinished = true
+                        onImporting()
+                        return importDriverArchive(
+                            downloadPath,
+                            PlatformBridge.currentTimeMillis(),
+                            PlatformBridge::execDriverImport,
+                            operationNonce,
+                            asset.sha256,
+                        )
+                    }
+                    "FAILED" -> {
+                        downloadFinished = true
+                        return DriverImportResult.Rejected(DriverArchiveError.TRANSFER_FAILED)
+                    }
+                }
+            }
+            return DriverImportResult.Rejected(DriverArchiveError.TRANSFER_FAILED)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            return DriverImportResult.Rejected(DriverArchiveError.TRANSFER_FAILED)
+        } finally {
+            withContext(NonCancellable) {
+                runCatching {
+                    val runner = runnerPid.ifEmpty { "0" }
+                    execute(cancelDownloadCommand(partialPath, downloadPath, pidPath, statusPath, runner, !downloadFinished))
+                }
+            }
+        }
+    }
+
+    private suspend fun importDriverArchive(
+        path: String,
+        importedAtEpochMillis: Long,
+        execute: RootCommand,
+        downloadNonce: String?,
+        expectedSha256: String?,
+    ): DriverImportResult {
+        val operationNonce = downloadNonce ?: nonce()
+        if (downloadNonce != null && !downloadNonce.matches(Regex("[0-9a-f]{1,64}"))) {
+            return DriverImportResult.Rejected(DriverArchiveError.INVALID_ZIP)
+        }
         val stageName = ".stage-$operationNonce"
         val snapshot = "$root/.snapshot-$operationNonce.zip"
         val stage = "$root/$stageName"
@@ -76,13 +156,17 @@ object DriverRepository {
             )
             if (available.errno != 0) return DriverImportResult.Rejected(DriverArchiveError.STORAGE_ERROR)
             helperStarted = true
-            val result = execute(helperCommand("prepare", path, root, operationNonce))
+            val helperMode = if (downloadNonce == null) "prepare" else "prepare-download"
+            val result = execute(helperCommand(helperMode, path, root, operationNonce))
             if (result.errno != 0 && result.stdout.isBlank()) {
                 return DriverImportResult.Rejected(DriverArchiveError.STORAGE_ERROR)
             }
             val prepared = parsePreparedProtocol(result.stdout)
             if (result.errno != 0 || prepared.stageName != stageName) {
                 throw DriverStoreException(DriverArchiveError.INVALID_ZIP)
+            }
+            if (expectedSha256 != null && !prepared.archiveSha256.equals(expectedSha256, ignoreCase = true)) {
+                throw DriverStoreException(DriverArchiveError.INVALID_ARCHIVE_HASH)
             }
             return publishPrepared(prepared, importedAtEpochMillis, execute)
         } catch (error: DriverStoreException) {
@@ -98,7 +182,64 @@ object DriverRepository {
                     runCatching { execute("if [ -e ${quote(stage)} ] || [ -L ${quote(stage)} ]; then rm -rf ${quote(stage)}; fi") }
                 }
             }
+            if (downloadNonce != null) {
+                withContext(NonCancellable) {
+                    runCatching { execute("rm -f ${quote(path)}") }
+                }
+            }
         }
+    }
+
+    internal fun startDownloadCommand(
+        asset: DriverReleaseAsset,
+        partialPath: String,
+        downloadPath: String,
+        pidPath: String,
+        statusPath: String,
+    ): String {
+        val curl = "(ulimit -f \"\$blocks\" && exec curl --fail --location --silent --show-error --connect-timeout 20 --max-time 300 " +
+            "--max-filesize ${asset.sizeBytes} --proto '=https' --proto-redir '=https' " +
+            "--output ${quote(partialPath)} ${quote(asset.downloadUrl)})"
+        val wget = "(ulimit -f \"\$blocks\" && exec wget -q -T 300 -O ${quote(partialPath)} ${quote(asset.downloadUrl)})"
+        // Shells use different block sizes for ulimit -f; /proc reports the inherited limit in bytes.
+        val fileLimit = "blockBytes=\$(ulimit -f 1; while read -r first second third soft rest; do " +
+            "if [ \"\$first \$second \$third\" = 'Max file size' ]; then printf '%s' \"\$soft\"; break; fi; done < /proc/self/limits); " +
+            "case \"\$blockBytes\" in 512|1024) ;; *) printf FAILED > ${quote(statusPath)}; exit 127 ;; esac; blocks=\$(((${asset.sizeBytes}+\$blockBytes-1)/\$blockBytes)); "
+        val runnerPath = "$pidPath.runner"
+        val directory = downloadPath.substringBeforeLast('/')
+        return "mkdir -p ${quote(directory)} && rm -f ${quote(partialPath)} ${quote(downloadPath)} ${quote(pidPath)} ${quote(runnerPath)} ${quote(statusPath)} && { " +
+            "(child=; trap 'child=\${child:-\$!}; [ -z \"\$child\" ] || kill -TERM \"\$child\" 2>/dev/null; exit 143' TERM INT; " +
+            fileLimit + "if command -v curl >/dev/null 2>&1; then $curl & else $wget & fi; " +
+            "child=\$!; printf '%s' \"\$child\" > ${quote(pidPath)}; wait \"\$child\"; code=\$?; " +
+            "size=\$(wc -c < ${quote(partialPath)} 2>/dev/null || echo 0); " +
+            "if [ \"\$code\" -eq 0 ] && [ \"\$size\" -eq ${asset.sizeBytes} ]; then " +
+            "mv ${quote(partialPath)} ${quote(downloadPath)} && printf DONE > ${quote(statusPath)}; " +
+            "else rm -f ${quote(partialPath)} ${quote(downloadPath)}; printf FAILED > ${quote(statusPath)}; fi) " +
+            ">/dev/null 2>&1 </dev/null & runner=\$!; printf '%s' \"\$runner\" > ${quote(runnerPath)}; printf '%s\n' \"\$runner\"; }"
+    }
+
+    private fun downloadProgressCommand(partialPath: String, downloadPath: String, statusPath: String): String =
+        "status=RUNNING; [ -f ${quote(statusPath)} ] && status=\$(cat ${quote(statusPath)}); " +
+            "size=0; if [ -f ${quote(downloadPath)} ]; then size=\$(wc -c < ${quote(downloadPath)}); " +
+            "elif [ -f ${quote(partialPath)} ]; then size=\$(wc -c < ${quote(partialPath)}); fi; " +
+            "printf '%s\n%s\n' \"\$status\" \"\$size\""
+
+    internal fun cancelDownloadCommand(
+        partialPath: String,
+        downloadPath: String,
+        pidPath: String,
+        statusPath: String,
+        runnerPid: String,
+        killProcesses: Boolean,
+    ): String {
+        val runnerPath = "$pidPath.runner"
+        return (if (killProcesses) {
+            "runner=${quote(runnerPid)}; [ -n \"\$runner\" ] && [ \"\$runner\" != 0 ] || runner=\$(cat ${quote(runnerPath)} 2>/dev/null); " +
+                "case \"\$runner\" in ''|0|*[!0-9]*) ;; *) kill -TERM \"\$runner\" 2>/dev/null || true ;; esac; " +
+                "child=; [ -f ${quote(pidPath)} ] && child=\$(cat ${quote(pidPath)}); " +
+                "case \"\$child\" in ''|0|*[!0-9]*) ;; *) kill -TERM \"\$child\" 2>/dev/null || true ;; esac; "
+        } else "") +
+            "rm -f ${quote(partialPath)} ${quote(downloadPath)} ${quote(pidPath)} ${quote(runnerPath)} ${quote(statusPath)}"
     }
 
     internal suspend fun publishPrepared(

@@ -115,6 +115,24 @@ public final class DriverPathHelperTest {
     }
 
     @Test
+    public void acceptsDownloadedZipOnlyFromNonceOwnedPrivatePath() throws Exception {
+        Path shared = temporaryFolder.newFolder("shared").toPath();
+        Path drivers = temporaryFolder.newFolder("drivers").toPath();
+        Path downloaded = drivers.resolve(".download-a1.zip");
+        byte[] archive = writeZip(downloaded, validEntries());
+
+        DriverPathHelper.PreparedImport prepared =
+                DriverPathHelper.prepareDownloadedArchive(downloaded, drivers, "a1");
+
+        assertEquals(sha256(archive), prepared.archiveSha256);
+        assertArrayEquals(META, prepared.metaJson);
+        assertArrayEquals(arm64Elf("main"), Files.readAllBytes(drivers.resolve(prepared.stageName).resolve("vulkan.ad07xx.so")));
+        assertTrue(Files.exists(downloaded));
+        assertFailure("INVALID_PATH", () -> DriverPathHelper.prepareDownloadedArchive(
+                shared.resolve(".download-a1.zip"), drivers, "a1"));
+    }
+
+    @Test
     public void rejectsTraversalDuplicateSymlinkAndBadCrc() throws Exception {
         Path shared = temporaryFolder.newFolder("shared").toPath();
         Path drivers = temporaryFolder.newFolder("drivers").toPath();

@@ -26,6 +26,8 @@ data class ModuleConfig(
     val enableFloatingBottomBar: Boolean = true,
     /** Enable glass effect on floating bottom bar */
     val enableFloatingBottomBarBlur: Boolean = true,
+    /** GitHub repositories that provide downloadable driver ZIPs. Null means use built-in defaults. */
+    val driverRepositories: List<String>? = null,
 )
 
 /**

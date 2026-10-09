@@ -11,6 +11,9 @@ import io.github.nku100.webui.data.DriverImportResult
 import io.github.nku100.webui.data.DriverPathException
 import io.github.nku100.webui.data.DriverPathError
 import io.github.nku100.webui.data.DriverPathEntry
+import io.github.nku100.webui.data.DriverDownloadProgress
+import io.github.nku100.webui.data.DriverReleaseAsset
+import io.github.nku100.webui.data.DriverSources
 import io.github.nku100.webui.data.DriverRepository
 import io.github.nku100.webui.data.ModuleConfig
 import io.github.nku100.webui.data.PackageSettings
@@ -24,6 +27,9 @@ import io.github.nku100.webui.ui.component.SearchStatus
 import io.github.nku100.webui.ui.screen.drivers.DriversUiState
 import io.github.nku100.webui.ui.screen.drivers.DriverListStatus
 import io.github.nku100.webui.ui.screen.drivers.DriverZipPickerState
+import io.github.nku100.webui.ui.screen.drivers.DriverDownloadUiState
+import io.github.nku100.webui.ui.screen.drivers.DriverRepositoryReleases
+import io.github.nku100.webui.ui.screen.drivers.DriverSourceActionError
 import io.github.nku100.webui.ui.screen.drivers.withPackageDriver
 import io.github.nku100.webui.ui.theme.ThemeMode
 import io.github.nku100.webui.ui.screen.settings.UpdateChannel
@@ -72,6 +78,7 @@ class MainViewModel : ViewModel() {
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
     private val searchQuery = MutableStateFlow("")
+    private var driverDownloadJob: Job? = null
 
     init {
         // Launch search query collector with debounce, mirroring KSU's launchSearchQueryCollector
@@ -102,7 +109,7 @@ class MainViewModel : ViewModel() {
                 throw e
             } catch (_: Exception) {
                 DriversUiState().afterListFailure()
-            }
+            }.copy(repositories = DriverSources.effective(config.driverRepositories))
             _uiState.update { it.copy(drivers = drivers) }
             val rawPackages = PlatformBridge.listPackages()
             val targets = config.targetPackages.toSet()
@@ -415,6 +422,191 @@ class MainViewModel : ViewModel() {
         } finally {
             _uiState.update { it.copy(drivers = it.drivers.copy(isBusy = false)) }
         }
+    }
+
+    suspend fun addDriverRepository(value: String): Boolean {
+        val current = _uiState.value
+        val normalized = DriverSources.normalize(value)
+        if (normalized == null) {
+            _uiState.update { it.copy(drivers = it.drivers.copy(sourceActionError = DriverSourceActionError.INVALID_REPOSITORY)) }
+            return false
+        }
+        val repositories = DriverSources.effective(current.config.driverRepositories)
+        if (repositories.any { DriverSources.identity(it) == DriverSources.identity(normalized) }) {
+            _uiState.update { it.copy(drivers = it.drivers.copy(sourceActionError = DriverSourceActionError.REPOSITORY_EXISTS)) }
+            return false
+        }
+        return saveDriverRepositories(DriverSources.add(repositories, normalized))
+    }
+
+    suspend fun addDefaultDriverRepositories(): Boolean {
+        val current = _uiState.value
+        val repositories = DriverSources.addDefaults(DriverSources.effective(current.config.driverRepositories))
+        return saveDriverRepositories(repositories)
+    }
+
+    suspend fun removeDriverRepository(repository: String): Boolean {
+        val current = _uiState.value
+        val repositories = DriverSources.remove(
+            DriverSources.effective(current.config.driverRepositories),
+            repository,
+        )
+        return saveDriverRepositories(repositories)
+    }
+
+    private suspend fun saveDriverRepositories(repositories: List<String>): Boolean {
+        val current = _uiState.value
+        val config = current.config.copy(driverRepositories = repositories)
+        return try {
+            ConfigRepository.save(config)
+            val removedKeys = current.drivers.repositories.filterNot { existing ->
+                repositories.any { DriverSources.identity(it) == DriverSources.identity(existing) }
+            }.mapNotNull(DriverSources::identity).toSet()
+            _uiState.update {
+                it.copy(
+                    config = config,
+                    drivers = it.drivers.copy(
+                        repositories = repositories,
+                        expandedRepository = it.drivers.expandedRepository?.takeIf { expanded ->
+                            repositories.any { repository -> DriverSources.identity(repository) == DriverSources.identity(expanded) }
+                        },
+                        repositoryReleases = it.drivers.repositoryReleases - removedKeys,
+                        sourceActionError = null,
+                    ),
+                )
+            }
+            true
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            _uiState.update { it.copy(drivers = it.drivers.copy(sourceActionError = DriverSourceActionError.SAVE_FAILED)) }
+            false
+        }
+    }
+
+    fun clearDriverSourceActionError() {
+        _uiState.update { it.copy(drivers = it.drivers.copy(sourceActionError = null)) }
+    }
+
+    fun toggleDriverRepository(repository: String): Job = viewModelScope.launch {
+        val normalized = DriverSources.normalize(repository) ?: return@launch
+        val key = DriverSources.identity(normalized) ?: return@launch
+        val current = _uiState.value.drivers
+        if (current.expandedRepository?.let(DriverSources::identity) == key) {
+            _uiState.update { it.copy(drivers = it.drivers.copy(expandedRepository = null)) }
+            return@launch
+        }
+        _uiState.update { it.copy(drivers = it.drivers.copy(expandedRepository = normalized)) }
+        if (current.repositoryReleases[key]?.hasLoaded == true || current.repositoryReleases[key]?.isLoading == true) return@launch
+        loadDriverRepositoryReleases(normalized, key)
+    }
+
+    private suspend fun loadDriverRepositoryReleases(repository: String, key: String) {
+        _uiState.update {
+            it.copy(drivers = it.drivers.copy(
+                repositoryReleases = it.drivers.repositoryReleases + (key to DriverRepositoryReleases(isLoading = true)),
+            ))
+        }
+        try {
+            val releases = DriverSources.fetchReleases(repository)
+            _uiState.update { state ->
+                if (state.drivers.repositories.none { DriverSources.identity(it) == key }) return@update state
+                state.copy(drivers = state.drivers.copy(
+                    repositoryReleases = state.drivers.repositoryReleases +
+                        (key to DriverRepositoryReleases(releases = releases, hasLoaded = true)),
+                ))
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            _uiState.update { state ->
+                if (state.drivers.repositories.none { DriverSources.identity(it) == key }) return@update state
+                state.copy(drivers = state.drivers.copy(
+                    repositoryReleases = state.drivers.repositoryReleases +
+                        (key to DriverRepositoryReleases(hasError = true)),
+                ))
+            }
+        }
+    }
+
+    fun retryDriverRepository(repository: String): Job {
+        return viewModelScope.launch {
+            val normalized = DriverSources.normalize(repository) ?: return@launch
+            val key = DriverSources.identity(normalized) ?: return@launch
+            _uiState.update { state ->
+                state.copy(drivers = state.drivers.copy(
+                    expandedRepository = normalized,
+                    repositoryReleases = state.drivers.repositoryReleases - key,
+                ))
+            }
+            loadDriverRepositoryReleases(normalized, key)
+        }
+    }
+
+    fun downloadDriverAsset(asset: DriverReleaseAsset) {
+        if (_uiState.value.drivers.isBusy || driverDownloadJob?.isActive == true) return
+        _uiState.update { state ->
+            state.copy(drivers = state.drivers.copy(
+                isBusy = true,
+                importError = null,
+                importedDriver = null,
+                download = DriverDownloadUiState(asset = asset),
+            ))
+        }
+        driverDownloadJob = viewModelScope.launch {
+            try {
+                when (val result = DriverRepository.downloadAndImportDriver(
+                    asset = asset,
+                    onProgress = ::updateDriverDownloadProgress,
+                    onImporting = {
+                        _uiState.update { state ->
+                            state.copy(drivers = state.drivers.copy(download = state.drivers.download?.copy(isImporting = true)))
+                        }
+                    },
+                )) {
+                    is DriverImportResult.Accepted -> {
+                        _uiState.update { state -> state.copy(drivers = state.drivers.copy(
+                            download = null,
+                            importedDriver = result.driver,
+                            drivers = state.drivers.drivers.filterNot { it.driverId == result.driver.driverId } + result.driver,
+                            listStatus = DriverListStatus.STALE,
+                        )) }
+                        refreshDriverList()
+                    }
+                    is DriverImportResult.Rejected -> _uiState.update { state ->
+                        state.copy(drivers = state.drivers.copy(download = state.drivers.download?.copy(error = result.error, isImporting = false)))
+                    }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                _uiState.update { state ->
+                    state.copy(drivers = state.drivers.copy(download = state.drivers.download?.copy(error = DriverArchiveError.TRANSFER_FAILED, isImporting = false)))
+                }
+            } finally {
+                _uiState.update { state -> state.copy(drivers = state.drivers.copy(isBusy = false)) }
+                driverDownloadJob = null
+            }
+        }
+    }
+
+    private fun updateDriverDownloadProgress(progress: DriverDownloadProgress) {
+        _uiState.update { state ->
+            state.copy(drivers = state.drivers.copy(download = state.drivers.download?.copy(
+                downloadedBytes = progress.downloadedBytes,
+                totalBytes = progress.totalBytes,
+            )))
+        }
+    }
+
+    fun cancelDriverDownload() {
+        if (_uiState.value.drivers.download?.isImporting == true) return
+        driverDownloadJob?.cancel()
+        _uiState.update { state -> state.copy(drivers = state.drivers.copy(download = null)) }
+    }
+
+    fun dismissDriverDownload() {
+        _uiState.update { state -> state.copy(drivers = state.drivers.copy(download = null)) }
     }
 
     fun refreshDrivers(): Job = viewModelScope.launch {

@@ -60,16 +60,13 @@ public final class DriverPathHelper {
             if (args.length == 4 && "prepare".equals(args[0])) {
                 PreparedImport prepared = prepareArchive(
                         Paths.get(args[1]), Paths.get(args[2]), args[3], SHARED_ROOT);
-                output.println(PROTOCOL + "\tOK\tPREPARE");
-                output.println("ARCHIVE\t" + prepared.archiveSha256);
-                if (prepared.metaJson != null) output.println("META\t" + Base64.getEncoder().encodeToString(prepared.metaJson));
-                for (ArchiveEntry entry : prepared.entries) {
-                    output.println("ENTRY\t" + encode(entry.path) + "\t" + (entry.regular ? "1" : "0") + "\t0");
-                }
-                for (PreparedFile file : prepared.files) {
-                    output.println("FILE\t" + encode(file.name) + "\t" + file.size + "\t" + file.sha256);
-                }
-                output.println("STAGE\t" + prepared.stageName);
+                printPrepared(output, prepared);
+                return;
+            }
+            if (args.length == 4 && "prepare-download".equals(args[0])) {
+                PreparedImport prepared = prepareDownloadedArchive(
+                        Paths.get(args[1]), Paths.get(args[2]), args[3]);
+                printPrepared(output, prepared);
                 return;
             }
             throw new HelperException("INVALID_ARGUMENT");
@@ -80,6 +77,19 @@ public final class DriverPathHelper {
             output.println(PROTOCOL + "\tERROR\tSTORAGE_ERROR");
             System.exit(2);
         }
+    }
+
+    private static void printPrepared(PrintStream output, PreparedImport prepared) {
+        output.println(PROTOCOL + "\tOK\tPREPARE");
+        output.println("ARCHIVE\t" + prepared.archiveSha256);
+        if (prepared.metaJson != null) output.println("META\t" + Base64.getEncoder().encodeToString(prepared.metaJson));
+        for (ArchiveEntry entry : prepared.entries) {
+            output.println("ENTRY\t" + encode(entry.path) + "\t" + (entry.regular ? "1" : "0") + "\t0");
+        }
+        for (PreparedFile file : prepared.files) {
+            output.println("FILE\t" + encode(file.name) + "\t" + file.size + "\t" + file.sha256);
+        }
+        output.println("STAGE\t" + prepared.stageName);
     }
 
     static List<PathEntry> listDirectory(Path requestedPath, Path storageRoot) throws HelperException {
@@ -131,13 +141,36 @@ public final class DriverPathHelper {
         return prepareArchive(requestedZip, driversRoot, nonce, storageRoot, DEFAULT_LIMITS);
     }
 
+    static PreparedImport prepareDownloadedArchive(Path requestedZip, Path driversRoot, String nonce)
+            throws HelperException {
+        return prepareArchive(requestedZip, driversRoot, nonce, SHARED_ROOT, DEFAULT_LIMITS, true);
+    }
+
     static PreparedImport prepareArchive(Path requestedZip, Path driversRoot, String nonce,
                                          Path storageRoot, Limits limits) throws HelperException {
+        return prepareArchive(requestedZip, driversRoot, nonce, storageRoot, limits, false);
+    }
+
+    private static PreparedImport prepareArchive(Path requestedZip, Path driversRoot, String nonce,
+                                                 Path storageRoot, Limits limits, boolean privateDownload)
+            throws HelperException {
         if (nonce == null || !nonce.matches("[0-9a-f]{1,64}")) throw new HelperException("INVALID_ARGUMENT");
-        Path shared = realPath(storageRoot, "ACCESS_DENIED");
-        Path lexicalRoot = storageRoot.toAbsolutePath().normalize();
+        Path root;
+        try {
+            Files.createDirectories(driversRoot);
+            root = driversRoot.toRealPath(LinkOption.NOFOLLOW_LINKS);
+        } catch (IOException error) {
+            throw new HelperException("STORAGE_ERROR", error);
+        }
+        if (Files.isSymbolicLink(root) || !Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS)) {
+            throw new HelperException("STORAGE_ERROR");
+        }
+
+        Path lexicalRoot = privateDownload ? driversRoot.toAbsolutePath().normalize() : storageRoot.toAbsolutePath().normalize();
+        Path allowedRoot = privateDownload ? realPath(root, "STORAGE_ERROR") : realPath(storageRoot, "ACCESS_DENIED");
         Path lexicalZip = requestedZip.toAbsolutePath().normalize();
-        if (!lexicalZip.startsWith(lexicalRoot) || Files.isSymbolicLink(lexicalZip)) {
+        if (!lexicalZip.startsWith(lexicalRoot) || Files.isSymbolicLink(lexicalZip) ||
+                (privateDownload && !lexicalZip.getFileName().toString().equals(".download-" + nonce + ".zip"))) {
             throw new HelperException("INVALID_PATH");
         }
         Path zip;
@@ -147,7 +180,7 @@ public final class DriverPathHelper {
         } catch (IOException error) {
             throw new HelperException("ACCESS_DENIED", error);
         }
-        if (!zip.startsWith(shared)) throw new HelperException("INVALID_PATH");
+        if (!zip.startsWith(allowedRoot)) throw new HelperException("INVALID_PATH");
         BasicFileAttributes sourceAttributes;
         try {
             sourceAttributes = Files.readAttributes(zip, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
@@ -159,17 +192,6 @@ public final class DriverPathHelper {
         }
         if (sourceAttributes.size() <= 0) throw new HelperException("INVALID_ARCHIVE");
         if (sourceAttributes.size() > limits.maxArchiveBytes) throw new HelperException("LIMIT_EXCEEDED");
-
-        Path root;
-        try {
-            Files.createDirectories(driversRoot);
-            root = driversRoot.toRealPath(LinkOption.NOFOLLOW_LINKS);
-        } catch (IOException error) {
-            throw new HelperException("STORAGE_ERROR", error);
-        }
-        if (Files.isSymbolicLink(root) || !Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS)) {
-            throw new HelperException("STORAGE_ERROR");
-        }
 
         Path snapshot = root.resolve(".snapshot-" + nonce + ".zip");
         Path stage = root.resolve(".stage-" + nonce);

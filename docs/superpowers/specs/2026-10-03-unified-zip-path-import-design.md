@@ -36,7 +36,7 @@ GPU 驱动页打开应用内弹层，默认进入 `/storage/emulated/0/Download`
 
 ## 不在本次范围内
 
-不支持 Android Storage Access Framework、系统文件选择器、content URI、云文件提供方或任意 root 文件系统浏览；不增加通用文件管理能力、网络下载或远程 Release 列表。若以后加入其他文件来源，也必须复用同一个导入入口。
+不支持 Android Storage Access Framework、系统文件选择器、content URI、云文件提供方或任意 root 文件系统浏览；不增加通用文件管理能力。GitHub Release 下载来源复用现有 ZIP 校验与发布流程；下载文件使用私有目录中与操作 nonce 匹配的路径，通过 `prepare-download` 入口校验。在线仓库的用户操作见[使用指南](../../gpu-driver-guide.md#在线仓库与下载)。
 
 ## 验证
 

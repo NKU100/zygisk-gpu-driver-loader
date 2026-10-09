@@ -6,12 +6,34 @@ import io.github.nku100.webui.data.DriverDeleteResult
 import io.github.nku100.webui.data.DriverInfo
 import io.github.nku100.webui.data.DriverDirectory
 import io.github.nku100.webui.data.DriverPathEntry
+import io.github.nku100.webui.data.DriverRelease
+import io.github.nku100.webui.data.DriverReleaseAsset
+import io.github.nku100.webui.data.DriverSources
 import io.github.nku100.webui.data.DriverPathError
 import io.github.nku100.webui.data.ModuleConfig
 import io.github.nku100.webui.data.PackageSettings
 import io.github.nku100.webui.platform.PackageInfo
 
 enum class DriverListStatus { LOADING, FRESH, UNAVAILABLE, STALE }
+
+enum class DriverSourceActionError { INVALID_REPOSITORY, REPOSITORY_EXISTS, SAVE_FAILED }
+
+@Immutable
+data class DriverRepositoryReleases(
+    val releases: List<DriverRelease> = emptyList(),
+    val isLoading: Boolean = false,
+    val hasLoaded: Boolean = false,
+    val hasError: Boolean = false,
+)
+
+@Immutable
+data class DriverDownloadUiState(
+    val asset: DriverReleaseAsset,
+    val downloadedBytes: Long = 0,
+    val totalBytes: Long = asset.sizeBytes,
+    val isImporting: Boolean = false,
+    val error: DriverArchiveError? = null,
+)
 
 @Immutable
 data class DriverAppBinding(
@@ -115,6 +137,11 @@ data class DriversUiState(
     val deleteError: DriverDeleteResult? = null,
     val deleteResetCount: Int = 0,
     val zipPicker: DriverZipPickerState = DriverZipPickerState(),
+    val repositories: List<String> = DriverSources.defaults,
+    val expandedRepository: String? = null,
+    val repositoryReleases: Map<String, DriverRepositoryReleases> = emptyMap(),
+    val sourceActionError: DriverSourceActionError? = null,
+    val download: DriverDownloadUiState? = null,
 ) {
     val showEmptyState: Boolean get() = listStatus == DriverListStatus.FRESH && drivers.isEmpty()
     val canRetryList: Boolean get() = listStatus == DriverListStatus.UNAVAILABLE || listStatus == DriverListStatus.STALE
