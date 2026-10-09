@@ -51,6 +51,8 @@ expect object PlatformBridge {
     suspend fun deleteDriver(driverId: String): DriverDeleteResult
     /** Execute a shell command with root privileges. */
     suspend fun exec(command: String): ShellResult
+    /** Execute a Release metadata request without waiting on the WebView JavaScript bridge. */
+    suspend fun execReleaseRequest(command: String): ShellResult
     /** Execute archive validation and extraction with an extended timeout. */
     suspend fun execDriverImport(command: String): ShellResult
     fun currentTimeMillis(): Long

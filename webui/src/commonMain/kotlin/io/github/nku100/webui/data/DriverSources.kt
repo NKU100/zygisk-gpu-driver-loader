@@ -89,7 +89,7 @@ object DriverSources {
             "--user-agent 'GPU-Driver-Loader' ${quote(url)}; " +
             "elif command -v wget >/dev/null 2>&1; then wget -q -T 45 -O - ${quote(url)}; " +
             "else exit 127; fi"
-        val result = PlatformBridge.exec(command)
+        val result = PlatformBridge.execReleaseRequest(command)
         if (result.errno != 0 || !result.stdout.trimStart().startsWith("[")) {
             throw IllegalStateException(result.stderr.ifBlank { "GitHub releases could not be loaded" })
         }

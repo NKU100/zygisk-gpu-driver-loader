@@ -34,6 +34,45 @@ import kotlin.js.Promise
 """)
 private external fun ksuExecJs(command: String, options: JsAny): Promise<JsAny>
 
+// spawn enqueues the shell job before returning; the legacy exec bridge waits for completion.
+@JsFun("""
+(command) => new Promise((resolve, reject) => {
+    const name = '__ksu_release_' + Math.random().toString(36).slice(2);
+    let stdout = '', stderr = '', completed = false, oversized = false;
+    const finish = (errno) => {
+        if (completed) return;
+        completed = true;
+        clearTimeout(timer);
+        resolve({ errno: oversized ? 1 : errno, stdout: stdout, stderr: oversized ? 'Release response exceeds size limit' : stderr });
+        setTimeout(() => { delete window[name]; }, 1000);
+    };
+    const timer = setTimeout(() => finish(124), 60000);
+    window[name] = {
+        stdout: { emit: (event, data) => {
+            if (completed || event !== 'data') return;
+            if (stdout.length + data.length > 5242880) oversized = true;
+            else if (!oversized) stdout += data + '\n';
+        } },
+        stderr: { emit: (event, data) => {
+            if (!completed && event === 'data' && stderr.length < 65536) stderr += data + '\n';
+        } },
+        emit: (event, value) => {
+            if (event === 'exit') finish(value);
+            else if (event === 'error') finish(value.exitCode || 1);
+        }
+    };
+    try {
+        ksu.spawn(command, '', '{}', name);
+    } catch (error) {
+        completed = true;
+        clearTimeout(timer);
+        delete window[name];
+        reject(error);
+    }
+})
+""")
+private external fun ksuReleaseRequestJs(command: String): Promise<JsAny>
+
 // Empty JS object for default exec options
 @JsFun("() => ({})")
 private external fun emptyJsObject(): JsAny
@@ -106,6 +145,11 @@ private external fun openUrlJs(url: String)
 actual fun openUrl(url: String) = openUrlJs(url)
 
 actual object PlatformBridge {
+    actual suspend fun execReleaseRequest(command: String): ShellResult {
+        val result = ksuReleaseRequestJs(command).await<JsAny>()
+        return ShellResult(getErrno(result), getStdout(result), getStderr(result))
+    }
+
     actual suspend fun execDriverImport(command: String): ShellResult = exec(command)
 
     actual fun currentTimeMillis(): Long = currentTimeMillisJs().toLong()

@@ -508,6 +508,7 @@ class MainViewModel : ViewModel() {
             ))
         }
         try {
+            awaitNextFrame()
             val releases = DriverSources.fetchReleases(repository)
             _uiState.update { state ->
                 if (state.drivers.repositories.none { DriverSources.identity(it) == key }) return@update state

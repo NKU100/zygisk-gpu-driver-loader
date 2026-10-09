@@ -38,6 +38,8 @@ actual object PlatformBridge {
 
     actual suspend fun exec(command: String): ShellResult = executeRootCommand(command, 60)
 
+    actual suspend fun execReleaseRequest(command: String): ShellResult = executeRootCommand(command, 60)
+
     actual suspend fun execDriverImport(command: String): ShellResult = executeRootCommand(command, 5 * 60)
 
     actual fun currentTimeMillis(): Long = System.currentTimeMillis()
