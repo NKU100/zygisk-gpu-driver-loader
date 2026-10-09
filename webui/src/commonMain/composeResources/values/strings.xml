@@ -47,6 +47,8 @@
     <!-- SettingsPage -->
     <string name="module_enabled">Module Enabled</string>
     <string name="module_enabled_summary">Enable or disable the Zygisk module</string>
+    <string name="theme_settings">Theme Settings</string>
+    <string name="theme_settings_summary">Theme, effects and navigation options</string>
     <string name="theme_mode">Theme Mode</string>
     <string name="theme_mode_summary">Choose light, dark, or follow system</string>
     <string name="theme_follow_system">Follow System</string>

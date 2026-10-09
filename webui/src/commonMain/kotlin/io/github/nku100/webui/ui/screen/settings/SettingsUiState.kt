@@ -8,15 +8,8 @@ import io.github.nku100.webui.ui.theme.normalizePageScale
 @Immutable
 data class SettingsUiState(
     val enabled: Boolean = true,
-    val themeMode: ThemeMode = ThemeMode.FOLLOW_SYSTEM,
     val updateChannel: UpdateChannel = UpdateChannel.STABLE,
     val updateChannelVisible: Boolean = false,
-    val enableMonet: Boolean = true,
-    val pageScale: Float = 1f,
-    val enableNavigationBadge: Boolean = true,
-    val enableBlur: Boolean = true,
-    val enableFloatingBottomBar: Boolean = true,
-    val enableFloatingBottomBarBlur: Boolean = true,
 ) {
     companion object {
         fun fromConfig(
@@ -26,30 +19,51 @@ data class SettingsUiState(
         ): SettingsUiState {
             return SettingsUiState(
                 enabled = config.enabled,
-                themeMode = ThemeMode.entries.find { it.name == config.themeMode }
-                    ?: ThemeMode.FOLLOW_SYSTEM,
                 updateChannel = updateChannel,
                 updateChannelVisible = updateChannelVisible,
-                enableMonet = config.enableMonet,
-                pageScale = normalizePageScale(config.pageScale),
-                enableNavigationBadge = config.enableNavigationBadge,
-                enableBlur = config.enableBlur,
-                enableFloatingBottomBar = config.enableFloatingBottomBar,
-                enableFloatingBottomBarBlur = config.enableFloatingBottomBarBlur,
             )
         }
     }
 }
 
+@Immutable
+data class ThemeSettingsUiState(
+    val themeMode: ThemeMode = ThemeMode.FOLLOW_SYSTEM,
+    val enableMonet: Boolean = true,
+    val enableBlur: Boolean = true,
+    val enableFloatingBottomBar: Boolean = true,
+    val enableFloatingBottomBarBlur: Boolean = true,
+    val enableNavigationBadge: Boolean = true,
+    val pageScale: Float = 1f,
+) {
+    companion object {
+        fun fromConfig(config: ModuleConfig) = ThemeSettingsUiState(
+            themeMode = ThemeMode.entries.find { it.name == config.themeMode }
+                ?: ThemeMode.FOLLOW_SYSTEM,
+            enableMonet = config.enableMonet,
+            enableBlur = config.enableBlur,
+            enableFloatingBottomBar = config.enableFloatingBottomBar,
+            enableFloatingBottomBarBlur = config.enableFloatingBottomBarBlur,
+            enableNavigationBadge = config.enableNavigationBadge,
+            pageScale = normalizePageScale(config.pageScale),
+        )
+    }
+}
+
 data class SettingsActions(
     val onEnabledChange: (Boolean) -> Unit,
-    val onThemeModeChange: (ThemeMode) -> Unit,
     val onUpdateChannelChange: (UpdateChannel) -> Unit,
+    val onOpenThemeSettings: () -> Unit,
+    val onOpenAbout: () -> Unit = {},
+)
+
+data class ThemeSettingsActions(
+    val onBack: () -> Unit,
+    val onThemeModeChange: (ThemeMode) -> Unit,
     val onEnableMonetChange: (Boolean) -> Unit,
-    val onPageScaleChange: (Float) -> Unit,
-    val onNavigationBadgeChange: (Boolean) -> Unit,
     val onEnableBlurChange: (Boolean) -> Unit,
     val onEnableFloatingBottomBarChange: (Boolean) -> Unit,
     val onEnableFloatingBottomBarBlurChange: (Boolean) -> Unit,
-    val onOpenAbout: () -> Unit = {},
+    val onNavigationBadgeChange: (Boolean) -> Unit,
+    val onPageScaleChange: (Float) -> Unit,
 )

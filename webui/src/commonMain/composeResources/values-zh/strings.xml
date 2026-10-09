@@ -47,6 +47,8 @@
     <!-- SettingsPage -->
     <string name="module_enabled">模块开关</string>
     <string name="module_enabled_summary">启用或禁用 Zygisk 模块</string>
+    <string name="theme_settings">主题设置</string>
+    <string name="theme_settings_summary">管理主题、界面效果与导航显示</string>
     <string name="theme_mode">主题模式</string>
     <string name="theme_mode_summary">选择浅色、深色或跟随系统</string>
     <string name="theme_follow_system">跟随系统</string>
