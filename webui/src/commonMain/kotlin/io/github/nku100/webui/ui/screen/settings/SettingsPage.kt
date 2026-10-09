@@ -19,10 +19,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.AspectRatio
 import androidx.compose.material.icons.rounded.BlurOn
 import androidx.compose.material.icons.rounded.CallToAction
 import androidx.compose.material.icons.rounded.ContactPage
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.Pin
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.WaterDrop
 import androidx.compose.runtime.Composable
@@ -150,103 +153,83 @@ fun SettingsPage(
                     SwitchPreference(
                         title = stringResource(Res.string.dynamic_colors),
                         summary = stringResource(Res.string.dynamic_colors_summary),
+                        startAction = {
+                            Icon(
+                                Icons.Rounded.AutoAwesome,
+                                modifier = Modifier.padding(end = 6.dp),
+                                contentDescription = stringResource(Res.string.dynamic_colors),
+                                tint = colorScheme.onBackground
+                            )
+                        },
                         checked = uiState.enableMonet,
                         onCheckedChange = actions.onEnableMonetChange,
                     )
-                }
-            }
-
-            item {
-                Card(
-                    modifier = Modifier
-                        .padding(top = 12.dp)
-                        .fillMaxWidth(),
-                ) {
+                    SwitchPreference(
+                        title = stringResource(Res.string.navigation_badge),
+                        summary = stringResource(Res.string.navigation_badge_summary),
+                        startAction = {
+                            Icon(
+                                Icons.Rounded.Pin,
+                                modifier = Modifier.padding(end = 6.dp),
+                                contentDescription = stringResource(Res.string.navigation_badge),
+                                tint = colorScheme.onBackground
+                            )
+                        },
+                        checked = uiState.enableNavigationBadge,
+                        onCheckedChange = actions.onNavigationBadgeChange,
+                    )
                     var sliderValue by remember(uiState.pageScale) {
                         mutableFloatStateOf(uiState.pageScale.coerceIn(0.8f, 1.1f))
                     }
-                    Column(
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
+                        Icon(
+                            Icons.Rounded.AspectRatio,
+                            modifier = Modifier.padding(end = 12.dp),
+                            contentDescription = stringResource(Res.string.page_scale),
+                            tint = colorScheme.onBackground
+                        )
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = stringResource(Res.string.page_scale),
+                                        color = colorScheme.onBackground,
+                                    )
+                                    Text(
+                                        text = stringResource(Res.string.page_scale_summary),
+                                        color = colorScheme.onSurfaceVariantSummary,
+                                    )
+                                }
                                 Text(
-                                    text = stringResource(Res.string.page_scale),
-                                    color = colorScheme.onBackground,
-                                )
-                                Text(
-                                    text = stringResource(Res.string.page_scale_summary),
-                                    color = colorScheme.onSurfaceVariantSummary,
+                                    text = "${(sliderValue * 100).roundToInt()}%",
+                                    color = colorScheme.onSurfaceVariantActions,
                                 )
                             }
-                            Text(
-                                text = "${(sliderValue * 100).roundToInt()}%",
-                                color = colorScheme.onSurfaceVariantActions,
+                            Slider(
+                                value = sliderValue,
+                                onValueChange = { sliderValue = it },
+                                onValueChangeFinished = { actions.onPageScaleChange(sliderValue) },
+                                valueRange = 0.8f..1.1f,
+                                showKeyPoints = true,
+                                keyPoints = listOf(0.8f, 0.9f, 1f, 1.1f),
+                                magnetThreshold = 0.01f,
+                                hapticEffect = SliderDefaults.SliderHapticEffect.Step,
                             )
                         }
-                        Slider(
-                            value = sliderValue,
-                            onValueChange = { sliderValue = it },
-                            onValueChangeFinished = { actions.onPageScaleChange(sliderValue) },
-                            valueRange = 0.8f..1.1f,
-                            showKeyPoints = true,
-                            keyPoints = listOf(0.8f, 0.9f, 1f, 1.1f),
-                            magnetThreshold = 0.01f,
-                            hapticEffect = SliderDefaults.SliderHapticEffect.Step,
-                        )
                     }
-                }
-            }
-
-            // Update Channel (only visible when module.prop updateJson matches known pattern)
-            item {
-                AnimatedVisibility(visible = uiState.updateChannelVisible) {
-                    Card(
-                        modifier = Modifier
-                            .padding(top = 12.dp)
-                            .fillMaxWidth(),
-                    ) {
-                        val channelItems = UpdateChannel.entries.map { channel ->
-                            when (channel) {
-                                UpdateChannel.STABLE -> stringResource(Res.string.update_channel_stable)
-                                UpdateChannel.BETA -> stringResource(Res.string.update_channel_beta)
-                            }
-                        }
-                        OverlayDropdownPreference(
-                            title = stringResource(Res.string.update_channel),
-                            summary = stringResource(Res.string.update_channel_summary),
-                            items = channelItems,
-                            startAction = {
-                                Icon(
-                                    Icons.Rounded.Update,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    contentDescription = stringResource(Res.string.update_channel),
-                                    tint = colorScheme.onBackground
-                                )
-                            },
-                            selectedIndex = UpdateChannel.entries.indexOf(uiState.updateChannel),
-                            onSelectedIndexChange = { index ->
-                                actions.onUpdateChannelChange(UpdateChannel.entries[index])
-                            }
-                        )
-                    }
-                }
-            }
-
-            // UI Effects
-            item {
-                Card(
-                    modifier = Modifier
-                        .padding(top = 12.dp)
-                        .fillMaxWidth(),
-                ) {
                     SwitchPreference(
                         title = stringResource(Res.string.blur_effects),
                         summary = stringResource(Res.string.blur_effects_summary),
@@ -291,12 +274,41 @@ fun SettingsPage(
                             onCheckedChange = actions.onEnableFloatingBottomBarBlurChange
                         )
                     }
-                    SwitchPreference(
-                        title = stringResource(Res.string.navigation_badge),
-                        summary = stringResource(Res.string.navigation_badge_summary),
-                        checked = uiState.enableNavigationBadge,
-                        onCheckedChange = actions.onNavigationBadgeChange,
-                    )
+                }
+            }
+
+            // Update Channel (only visible when module.prop updateJson matches known pattern)
+            item {
+                AnimatedVisibility(visible = uiState.updateChannelVisible) {
+                    Card(
+                        modifier = Modifier
+                            .padding(top = 12.dp)
+                            .fillMaxWidth(),
+                    ) {
+                        val channelItems = UpdateChannel.entries.map { channel ->
+                            when (channel) {
+                                UpdateChannel.STABLE -> stringResource(Res.string.update_channel_stable)
+                                UpdateChannel.BETA -> stringResource(Res.string.update_channel_beta)
+                            }
+                        }
+                        OverlayDropdownPreference(
+                            items = channelItems,
+                            title = stringResource(Res.string.update_channel),
+                            summary = stringResource(Res.string.update_channel_summary),
+                            startAction = {
+                                Icon(
+                                    Icons.Rounded.Update,
+                                    modifier = Modifier.padding(end = 6.dp),
+                                    contentDescription = stringResource(Res.string.update_channel),
+                                    tint = colorScheme.onBackground
+                                )
+                            },
+                            selectedIndex = UpdateChannel.entries.indexOf(uiState.updateChannel),
+                            onSelectedIndexChange = { index ->
+                                actions.onUpdateChannelChange(UpdateChannel.entries[index])
+                            }
+                        )
+                    }
                 }
             }
 
