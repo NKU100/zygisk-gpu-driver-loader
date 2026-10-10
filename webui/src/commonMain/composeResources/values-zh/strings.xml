@@ -45,6 +45,8 @@
     <!-- SettingsPage -->
     <string name="module_enabled">模块开关</string>
     <string name="module_enabled_summary">启用或禁用 Zygisk 模块</string>
+    <string name="theme_settings">主题设置</string>
+    <string name="theme_settings_summary">管理主题、界面效果与导航显示</string>
     <string name="theme_mode">主题模式</string>
     <string name="theme_mode_summary">选择浅色、深色或跟随系统</string>
     <string name="theme_follow_system">跟随系统</string>
@@ -131,6 +133,7 @@
 
     <!-- SuperSearchBar -->
     <string name="cancel">取消</string>
+    <string name="save">保存</string>
     <string name="search">搜索</string>
     <string name="clear">清除</string>
     <string name="root_required">需要 root 授权</string>
@@ -176,4 +179,10 @@
     <string name="driver_download_failed">驱动 ZIP 下载失败。</string>
     <string name="driver_download_asset_info">ZIP · %1$s · 下载 %2$d 次</string>
     <string name="driver_delete_repository_accessibility">移除仓库</string>
+    <string name="dynamic_colors">动态配色</string>
+    <string name="dynamic_colors_summary">使用系统配色；关闭后使用 Miuix 默认配色</string>
+    <string name="page_scale">页面缩放</string>
+    <string name="page_scale_summary">调整界面文字和布局大小</string>
+    <string name="navigation_badge">导航角标</string>
+    <string name="navigation_badge_summary">在应用页显示已选目标应用数量</string>
 </resources>

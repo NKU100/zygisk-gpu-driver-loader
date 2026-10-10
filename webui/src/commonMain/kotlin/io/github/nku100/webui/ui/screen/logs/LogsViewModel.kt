@@ -147,13 +147,6 @@ class LogsViewModel : ViewModel() {
         return result
     }
 
-    private val MOCK_LINES = listOf(
-        parseLogLine("04-08 04:49:52.878  3285  3285 I GpuDriverLoader: process=com.example.app status=HookInstalled"),
-        parseLogLine("04-08 04:50:01.123  4000  4000 D GpuDriverLoader: preAppSpecialize called for com.google.android.gms"),
-        parseLogLine("04-08 04:50:02.456  4001  4001 W GpuDriverLoader: config not found for com.example.unknown, skipping"),
-        parseLogLine("04-08 04:50:03.789  4002  4002 E GpuDriverLoader: Failed to open config.json: No such file or directory"),
-        parseLogLine("04-08 04:50:05.000  4003  4003 V GpuDriverLoader: onLoad complete"),
-    )
 }
 
 private val REGEX_THREADTIME = Regex(
@@ -206,3 +199,11 @@ private fun charToLevel(c: Char): LogLevel = when (c) {
     'F', 'S' -> LogLevel.FATAL
     else -> LogLevel.UNKNOWN
 }
+
+private val MOCK_LINES = listOf(
+    parseLogLine("04-08 04:49:52.878  3285  3285 I GpuDriverLoader: process=com.example.app status=HookInstalled"),
+    parseLogLine("04-08 04:50:01.123  4000  4000 D GpuDriverLoader: preAppSpecialize called for com.google.android.gms"),
+    parseLogLine("04-08 04:50:02.456  4001  4001 W GpuDriverLoader: config not found for com.example.unknown, skipping"),
+    parseLogLine("04-08 04:50:03.789  4002  4002 E GpuDriverLoader: Failed to open config.json: No such file or directory"),
+    parseLogLine("04-08 04:50:05.000  4003  4003 V GpuDriverLoader: onLoad complete"),
+)

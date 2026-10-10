@@ -41,11 +41,8 @@ fun PlaceholderPage(
                 uiState = SettingsUiState.fromConfig(config, uiState.updateChannel, uiState.updateChannelVisible),
                 actions = SettingsActions(
                     onEnabledChange = { viewModel.setEnabled(it) },
-                    onThemeModeChange = { viewModel.setThemeMode(it) },
                     onUpdateChannelChange = { viewModel.setUpdateChannel(it) },
-                    onEnableBlurChange = { viewModel.setEnableBlur(it) },
-                    onEnableFloatingBottomBarChange = { viewModel.setEnableFloatingBottomBar(it) },
-                    onEnableFloatingBottomBarBlurChange = { viewModel.setEnableFloatingBottomBarBlur(it) },
+                    onOpenThemeSettings = { navigator.push(Route.ThemeSettings) },
                     onOpenAbout = { navigator.push(Route.About) },
                     onOpenDrivers = { navigator.push(Route.Drivers) },
                 ),

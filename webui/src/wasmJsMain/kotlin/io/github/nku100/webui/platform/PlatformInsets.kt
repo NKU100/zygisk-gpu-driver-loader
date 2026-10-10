@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import io.github.nku100.webui.ui.theme.LocalPageScale
 import kotlinx.coroutines.delay
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -22,13 +23,13 @@ private external fun getSafeAreaInsetBottomDp(): Float
  * asynchronously after enableEdgeToEdge(true) is called.
  */
 @Composable
-private fun rememberSafeAreaInset(reader: () -> Float): Dp {
-    val insetDp = produceState(reader().dp) {
+private fun rememberSafeAreaInset(reader: () -> Float, pageScale: Float): Dp {
+    val insetDp = produceState((reader() / pageScale).dp, pageScale) {
         // Poll for up to 2 seconds to capture async inset injection
         var attempts = 0
         while (attempts < 20) {
             delay(100.milliseconds)
-            val dp = reader()
+            val dp = reader() / pageScale
             val newDp = dp.dp
             if (newDp != value) value = newDp
             if (dp > 0f) break
@@ -39,7 +40,7 @@ private fun rememberSafeAreaInset(reader: () -> Float): Dp {
 }
 
 @Composable
-actual fun statusBarTopPadding(): Dp = rememberSafeAreaInset(::getSafeAreaInsetTopDp)
+actual fun statusBarTopPadding(): Dp = rememberSafeAreaInset(::getSafeAreaInsetTopDp, LocalPageScale.current)
 
 @Composable
-actual fun navigationBarBottomPadding(): Dp = rememberSafeAreaInset(::getSafeAreaInsetBottomDp)
+actual fun navigationBarBottomPadding(): Dp = rememberSafeAreaInset(::getSafeAreaInsetBottomDp, LocalPageScale.current)
