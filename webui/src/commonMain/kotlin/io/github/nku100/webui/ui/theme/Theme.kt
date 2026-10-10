@@ -33,7 +33,7 @@ expect fun isSystemDarkTheme(): Boolean
 @Composable
 fun AppTheme(
     themeMode: ThemeMode,
-    enableMonet: Boolean = true,
+    enableMonet: Boolean = false,
     pageScale: Float = 1f,
     content: @Composable () -> Unit,
 ) {

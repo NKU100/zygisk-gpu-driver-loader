@@ -19,7 +19,7 @@ data class ModuleConfig(
     /** Theme mode: FOLLOW_SYSTEM, LIGHT, DARK */
     val themeMode: String = "FOLLOW_SYSTEM",
     /** Use system dynamic colors instead of the default Miuix palette. */
-    val enableMonet: Boolean = true,
+    val enableMonet: Boolean = false,
     /** Scale all Miuix UI dimensions and text, from 80% to 110%. */
     val pageScale: Float = 1f,
     /** Show the selected target app count on the Apps tab. */
