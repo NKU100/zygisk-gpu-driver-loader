@@ -31,6 +31,12 @@ class ThemeSettingsTest {
     }
 
     @Test
+    fun dynamicColorsDefaultToDisabledWhenMissingFromConfig() {
+        val config = Json.decodeFromString<ModuleConfig>("{}")
+        assertFalse(config.enableMonet)
+    }
+
+    @Test
     fun hostColorCssAcceptsOnlyOpaqueHexColors() {
         assertEquals(Color(0xFF6750A4), parseThemeColorCssValue(" #6750A4 "))
         assertNull(parseThemeColorCssValue("rgb(103, 80, 164)"))
