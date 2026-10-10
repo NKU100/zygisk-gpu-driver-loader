@@ -2,6 +2,7 @@ package io.github.nku100.webui.ui.theme
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
@@ -9,6 +10,7 @@ import top.yukonga.miuix.kmp.theme.ColorSchemeMode
 import top.yukonga.miuix.kmp.theme.LocalContentColor
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.ThemeController
+import top.yukonga.miuix.kmp.theme.darkColorScheme
 
 /**
  * Theme mode for the app.
@@ -43,8 +45,10 @@ fun AppTheme(
         ThemeMode.DARK -> true
     }
 
+    val defaultDarkColors = darkColorScheme()
     val controller = ThemeController(
         colorSchemeMode = resolveColorSchemeMode(isDark, enableMonet),
+        darkColors = darkColorScheme(surfaceContainerHigh = defaultDarkColors.surfaceContainerHighest),
         keyColor = rememberHostThemeSeedColor().takeIf { enableMonet },
         isDark = isDark,
     )
@@ -56,8 +60,15 @@ fun AppTheme(
     MiuixTheme(
         controller = controller,
         content = {
+            val colorScheme = MiuixTheme.colorScheme
             CompositionLocalProvider(
                 LocalContentColor provides MiuixTheme.colorScheme.onBackground,
+                LocalReleaseCardSurface provides resolveReleaseCardSurface(
+                    isDark = isDark,
+                    enableMonet = enableMonet,
+                    surface = colorScheme.surface,
+                    surfaceContainerHigh = colorScheme.surfaceContainerHigh,
+                ),
                 LocalPageScale provides scale,
                 LocalDensity provides Density(density.density * scale, density.fontScale),
             ) {
@@ -75,6 +86,13 @@ internal fun resolveColorSchemeMode(isDark: Boolean, enableMonet: Boolean): Colo
         else -> ColorSchemeMode.Light
     }
 
+internal fun resolveReleaseCardSurface(
+    isDark: Boolean,
+    enableMonet: Boolean,
+    surface: Color,
+    surfaceContainerHigh: Color,
+): Color = if (!isDark && !enableMonet) surface else surfaceContainerHigh
+
 @Composable
 expect fun ApplySystemBarAppearance(isDark: Boolean)
 
@@ -82,6 +100,7 @@ expect fun ApplySystemBarAppearance(isDark: Boolean)
 expect fun rememberHostThemeSeedColor(): Color?
 
 internal val LocalPageScale = androidx.compose.runtime.staticCompositionLocalOf { 1f }
+internal val LocalReleaseCardSurface = staticCompositionLocalOf { Color.White }
 
 internal fun normalizePageScale(scale: Float): Float =
     if (scale.isFinite()) scale.coerceIn(0.8f, 1.1f) else 1f

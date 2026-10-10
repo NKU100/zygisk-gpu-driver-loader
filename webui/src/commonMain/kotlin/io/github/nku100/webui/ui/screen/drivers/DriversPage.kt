@@ -66,6 +66,7 @@ import io.github.nku100.webui.platform.PackageInfo
 import io.github.nku100.webui.ui.util.rememberDefaultBlurBackdrop
 import io.github.nku100.webui.ui.util.topBarDefaultWindowInsetsPadding
 import io.github.nku100.webui.ui.util.topBarModifier
+import io.github.nku100.webui.ui.theme.LocalReleaseCardSurface
 import kotlin.time.Instant
 import org.jetbrains.compose.resources.stringResource
 import top.yukonga.miuix.kmp.basic.Card
@@ -211,6 +212,8 @@ fun DriversPage(
                                     when {
                                         releaseState?.isLoading == true -> LinearProgressIndicator(
                                             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                                            color = colorScheme.primary,
+                                            trackColor = colorScheme.surfaceContainerHigh,
                                         )
                                         releaseState?.hasError == true -> Column(
                                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
@@ -556,7 +559,12 @@ fun DriversPage(
                                 val fraction = if (download.totalBytes > 0) {
                                     (download.downloadedBytes.toFloat() / download.totalBytes.toFloat()).coerceIn(0f, 1f)
                                 } else 0f
-                                LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
+                                LinearProgressIndicator(
+                                    progress = { fraction },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    color = colorScheme.primary,
+                                    trackColor = colorScheme.surfaceContainerHigh,
+                                )
                                 Text(
                                     stringResource(Res.string.driver_download_progress, formatDriverBytes(download.downloadedBytes), formatDriverBytes(download.totalBytes)),
                                     modifier = Modifier.padding(top = 8.dp),
@@ -599,7 +607,12 @@ private fun DriverCancelDeleteButton(
         onClick = onClick,
         enabled = enabled,
         shape = RoundedCornerShape(18.dp),
-        colors = ButtonDefaults.outlinedButtonColors(contentColor = colorScheme.onSurface),
+        colors = ButtonDefaults.outlinedButtonColors(
+            containerColor = Color.Transparent,
+            contentColor = colorScheme.onSurface,
+            disabledContainerColor = Color.Transparent,
+            disabledContentColor = colorScheme.onSurfaceVariantSummary,
+        ),
         border = BorderStroke(1.dp, colorScheme.onSurfaceVariantSummary),
     ) {
         Text(stringResource(Res.string.cancel), style = MiuixTheme.textStyles.body2, color = colorScheme.onSurface)
@@ -746,10 +759,11 @@ private fun DriverReleaseCard(
     var notesExpanded by remember(release.repository, release.tag) { mutableStateOf(false) }
     var notesOverflow by remember(release.repository, release.tag) { mutableStateOf(false) }
     val notes = release.notes.trim()
+    val releaseCardSurface = LocalReleaseCardSurface.current
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
-        color = colorScheme.surfaceContainerHigh,
+        color = releaseCardSurface,
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(start = 12.dp, top = 12.dp, end = 12.dp, bottom = 10.dp)) {
             Row(

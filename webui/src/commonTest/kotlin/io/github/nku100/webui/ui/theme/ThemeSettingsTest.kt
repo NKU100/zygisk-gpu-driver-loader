@@ -23,6 +23,17 @@ class ThemeSettingsTest {
     }
 
     @Test
+    fun releaseCardUsesLowSurfaceInStaticLightAndKeepsThemeContainerElsewhere() {
+        val surface = Color(0xFFF7F7F7)
+        val containerHigh = Color(0xFFE8E8E8)
+
+        assertEquals(surface, resolveReleaseCardSurface(false, false, surface, containerHigh))
+        assertEquals(containerHigh, resolveReleaseCardSurface(false, true, surface, containerHigh))
+        assertEquals(containerHigh, resolveReleaseCardSurface(true, false, surface, containerHigh))
+        assertEquals(containerHigh, resolveReleaseCardSurface(true, true, surface, containerHigh))
+    }
+
+    @Test
     fun legacyColorStyleIsReadButNoLongerWritten() {
         val json = Json { ignoreUnknownKeys = true }
         val config = json.decodeFromString<ModuleConfig>("""{"colorStyle":"TEAL","themeMode":"DARK"}""")

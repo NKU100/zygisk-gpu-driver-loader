@@ -7,6 +7,8 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.unit.dp
 import io.github.nku100.webui.data.DriverInfo
 import io.github.nku100.webui.ui.theme.AppTheme
 import io.github.nku100.webui.ui.theme.ThemeMode
@@ -32,7 +34,7 @@ class DriverListItemTest {
 
         setContent {
             AppTheme(ThemeMode.LIGHT) {
-                DriverListItem(driver = driver, onClick = onSelectDriver)
+                DriverListItem(driver = driver, shape = RoundedCornerShape(18.dp), onClick = onSelectDriver)
             }
         }
 

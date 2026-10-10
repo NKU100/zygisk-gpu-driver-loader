@@ -33,7 +33,6 @@ import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material3.TextButton as MaterialTextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -135,10 +134,11 @@ internal fun DriverZipPickerDialog(
                                     },
                                     color = colorScheme.error,
                                 )
-                                MaterialTextButton(
+                                MiuixTextButton(
+                                    text = stringResource(Res.string.driver_picker_retry),
                                     onClick = onRetry,
                                     enabled = !picker.isLoading && directory.path == picker.path,
-                                ) { Text(stringResource(Res.string.driver_picker_retry)) }
+                                )
                             }
                             else -> Column(Modifier.fillMaxSize()) {
                                 if (!directory.isAtStorageRoot) {

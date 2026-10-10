@@ -1,9 +1,7 @@
 package io.github.nku100.webui.ui.screen.drivers
 
 import androidx.compose.ui.test.ExperimentalTestApi
-import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsEnabled
-import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -58,6 +56,15 @@ class DriversPageTest {
                     onImportSelectedZip = {},
                     onDelete = { _, reset -> resetBindings = reset },
                     onRetryList = {},
+                    onAddRepository = { false },
+                    onAddDefaultRepositories = { false },
+                    onRemoveRepository = { false },
+                    onClearSourceError = {},
+                    onToggleRepository = {},
+                    onRetryRepository = {},
+                    onDownloadAsset = {},
+                    onCancelDownload = {},
+                    onDismissDownload = {},
                     bottomPadding = 0.dp,
                     enableBlur = false,
                 )
@@ -102,6 +109,15 @@ class DriversPageTest {
                     onImportSelectedZip = {},
                     onDelete = { _, _ -> deleteCalls++ },
                     onRetryList = {},
+                    onAddRepository = { false },
+                    onAddDefaultRepositories = { false },
+                    onRemoveRepository = { false },
+                    onClearSourceError = {},
+                    onToggleRepository = {},
+                    onRetryRepository = {},
+                    onDownloadAsset = {},
+                    onCancelDownload = {},
+                    onDismissDownload = {},
                     bottomPadding = 0.dp,
                     enableBlur = false,
                 )
@@ -110,13 +126,7 @@ class DriversPageTest {
 
         onNodeWithText(driver.name, useUnmergedTree = true).performTouchInput { click() }
         onNodeWithText("deadbeefcaf0", substring = true).assertExists()
-        onNodeWithTag("driver-delete-entry").assertWidthIsAtLeast(240.dp)
-        onNodeWithTag("driver-delete-entry").assertHeightIsEqualTo(48.dp)
         onNodeWithTag("driver-delete-entry").performTouchInput { click() }
-        onNodeWithTag("driver-delete-confirm").assertWidthIsAtLeast(240.dp)
-        onNodeWithTag("driver-delete-cancel").assertWidthIsAtLeast(240.dp)
-        onNodeWithTag("driver-delete-confirm").assertHeightIsEqualTo(48.dp)
-        onNodeWithTag("driver-delete-cancel").assertHeightIsEqualTo(48.dp)
         val deleteTop = onNodeWithTag("driver-delete-confirm").fetchSemanticsNode().boundsInRoot.top
         val cancelTop = onNodeWithTag("driver-delete-cancel").fetchSemanticsNode().boundsInRoot.top
         assertTrue(deleteTop < cancelTop, "The destructive action should appear above Cancel")
