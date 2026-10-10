@@ -1,6 +1,6 @@
 package io.github.nku100.webui.ui.screen
 
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
@@ -23,7 +23,6 @@ import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -35,6 +34,8 @@ import io.github.nku100.webui.ui.util.defaultBlurEffect
 import io.github.nku100.webui.ui.util.rememberContentReady
 import io.github.nku100.webui.ui.util.rememberDefaultBlurBackdrop
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.Badge
+import top.yukonga.miuix.kmp.basic.BadgedBox
 import top.yukonga.miuix.kmp.basic.NavigationBar
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.NavigationItem
@@ -54,6 +55,7 @@ fun MainScreen(viewModel: MainViewModel, uiState: MainUiState, onPagerStateReady
     val scope = rememberCoroutineScope()
 
     val config = uiState.config
+    val targetAppCount = config.targetPackages.toSet().size
     val enableFloatingBottomBar = config.enableFloatingBottomBar
     val enableFloatingBottomBarBlur = config.enableFloatingBottomBarBlur && enableFloatingBottomBar
 
@@ -94,7 +96,7 @@ fun MainScreen(viewModel: MainViewModel, uiState: MainUiState, onPagerStateReady
                 FloatingBottomBar(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .pointerInput(Unit) { detectTapGestures { } }
+                        .clickable(interactionSource = null, indication = null, onClick = {})
                         .padding(
                             bottom = 12.dp + navigationBarBottomPadding()
                         ),
@@ -105,21 +107,29 @@ fun MainScreen(viewModel: MainViewModel, uiState: MainUiState, onPagerStateReady
                     isBlurEnabled = enableFloatingBottomBarBlur,
                 ) { activateTab ->
                     items.forEachIndexed { index, item ->
+                        val badge = targetAppCountBadge(
+                            count = targetAppCount.takeIf {
+                                config.enableNavigationBadge && index == BottomTab.APPS.ordinal
+                            } ?: 0,
+                            floating = true,
+                        )
                         FloatingBottomBarItem(
                             selected = mainPagerState.selectedPage == index,
                             onClick = { activateTab(index) },
                             modifier = Modifier.defaultMinSize(minWidth = 76.dp)
                         ) {
-                            Icon(
-                                imageVector = item.icon,
-                                contentDescription = item.label,
-                                tint = MiuixTheme.colorScheme.onSurface
-                            )
+                            val icon: @Composable () -> Unit = {
+                                Icon(imageVector = item.icon, contentDescription = item.label)
+                            }
+                            if (badge != null) {
+                                BadgedBox(badge = { badge() }) { icon() }
+                            } else {
+                                icon()
+                            }
                             Text(
                                 text = item.label,
                                 fontSize = 11.sp,
                                 lineHeight = 14.sp,
-                                color = MiuixTheme.colorScheme.onSurface,
                                 maxLines = 1,
                                 softWrap = false,
                                 overflow = TextOverflow.Visible
@@ -135,12 +145,19 @@ fun MainScreen(viewModel: MainViewModel, uiState: MainUiState, onPagerStateReady
                     color = if (config.enableBlur) Color.Transparent else MiuixTheme.colorScheme.surface,
                     content = {
                         items.forEachIndexed { index, item ->
+                            val badge = targetAppCountBadge(
+                                count = targetAppCount.takeIf {
+                                    config.enableNavigationBadge && index == BottomTab.APPS.ordinal
+                                } ?: 0,
+                                floating = false,
+                            )
                             NavigationBarItem(
                                 modifier = Modifier.weight(1f),
                                 icon = item.icon,
                                 label = item.label,
                                 selected = mainPagerState.selectedPage == index,
-                                onClick = { mainPagerState.animateToPage(index) }
+                                onClick = { mainPagerState.animateToPage(index) },
+                                badge = badge,
                             )
                         }
                     }
@@ -187,6 +204,20 @@ fun MainScreen(viewModel: MainViewModel, uiState: MainUiState, onPagerStateReady
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun targetAppCountBadge(count: Int, floating: Boolean): (@Composable () -> Unit)? {
+    if (count <= 0) return null
+    val colors = MiuixTheme.colorScheme
+    val background = if (floating) colors.primaryContainer else colors.primary
+    val content = if (floating) colors.onPrimaryContainer else colors.onPrimary
+    val label = if (count > 99) "99+" else count.toString()
+    return {
+        Badge(containerColor = background, contentColor = content) {
+            Text(text = label, fontSize = 9.sp, lineHeight = 11.sp)
         }
     }
 }

@@ -27,6 +27,9 @@ import io.github.nku100.webui.ui.screen.apps.AppProfilePage
 import io.github.nku100.webui.ui.screen.apps.AppProfileUiState
 import io.github.nku100.webui.ui.screen.drivers.DriversPage
 import io.github.nku100.webui.ui.screen.settings.AboutPage
+import io.github.nku100.webui.ui.screen.settings.ThemeSettingsActions
+import io.github.nku100.webui.ui.screen.settings.ThemeSettingsPage
+import io.github.nku100.webui.ui.screen.settings.ThemeSettingsUiState
 import io.github.nku100.webui.ui.theme.AppTheme
 
 /**
@@ -41,7 +44,11 @@ fun App() {
     val navigator = rememberNavigator(Route.Main)
     val mainPagerStateHolder = remember { mutableStateOf<MainPagerState?>(null) }
 
-    AppTheme(themeMode = uiState.themeMode) {
+    AppTheme(
+        themeMode = uiState.themeMode,
+        enableMonet = uiState.config.enableMonet,
+        pageScale = uiState.config.pageScale,
+    ) {
         CompositionLocalProvider(LocalNavigator provides navigator) {
             // Must be at App level so it survives route navigation (MainScreen unmounts on push)
             BrowserHistorySync(navigator = navigator, mainPagerState = mainPagerStateHolder.value)
@@ -99,6 +106,23 @@ fun App() {
                             onDownloadAsset = viewModel::downloadDriverAsset,
                             onCancelDownload = viewModel::cancelDriverDownload,
                             onDismissDownload = viewModel::dismissDriverDownload,
+                            bottomPadding = io.github.nku100.webui.platform.navigationBarBottomPadding(),
+                            enableBlur = uiState.config.enableBlur,
+                        )
+                    }
+                    entry<Route.ThemeSettings> {
+                        ThemeSettingsPage(
+                            uiState = ThemeSettingsUiState.fromConfig(uiState.config),
+                            actions = ThemeSettingsActions(
+                                onBack = { navigator.pop() },
+                                onThemeModeChange = viewModel::setThemeMode,
+                                onEnableMonetChange = viewModel::setEnableMonet,
+                                onEnableBlurChange = viewModel::setEnableBlur,
+                                onEnableFloatingBottomBarChange = viewModel::setEnableFloatingBottomBar,
+                                onEnableFloatingBottomBarBlurChange = viewModel::setEnableFloatingBottomBarBlur,
+                                onNavigationBadgeChange = viewModel::setNavigationBadgeEnabled,
+                                onPageScaleChange = viewModel::setPageScale,
+                            ),
                             bottomPadding = io.github.nku100.webui.platform.navigationBarBottomPadding(),
                             enableBlur = uiState.config.enableBlur,
                         )

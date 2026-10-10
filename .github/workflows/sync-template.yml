@@ -42,6 +42,7 @@ jobs:
         run: git stash push --include-untracked --message template-sync-worktree-cleanup
 
       - name: Create or update pull request
+        id: create-pull-request
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.TEMPLATE_SYNC_TOKEN || github.token }}
@@ -53,4 +54,27 @@ jobs:
           body: |
             This pull request contains the latest changes from the template repository.
 
-            Review the Git merge result, resolve any conflicts manually, and merge this pull request when it is ready.
+            The workflow enables squash auto-merge when GitHub confirms this pull request is mergeable. Pull requests with conflicts or unresolved merge requirements remain open for review.
+
+      - name: Enable auto-merge when the pull request is mergeable
+        if: steps.create-pull-request.outputs.pull-request-number != ''
+        env:
+          GH_TOKEN: ${{ secrets.TEMPLATE_SYNC_TOKEN || github.token }}
+          PR_NUMBER: ${{ steps.create-pull-request.outputs.pull-request-number }}
+        run: |
+          for attempt in {1..10}; do
+            mergeable=$(gh pr view "$PR_NUMBER" --json mergeable --jq '.mergeable')
+            if [[ "$mergeable" != "UNKNOWN" ]]; then
+              break
+            fi
+            if (( attempt < 10 )); then
+              sleep 3
+            fi
+          done
+
+          if [[ "$mergeable" != "MERGEABLE" ]]; then
+            echo "Template sync PR is not confirmed mergeable (state: $mergeable); leaving it open."
+            exit 0
+          fi
+
+          gh pr merge "$PR_NUMBER" --auto --squash --delete-branch

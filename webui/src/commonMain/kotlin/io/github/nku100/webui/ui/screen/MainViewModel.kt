@@ -32,6 +32,7 @@ import io.github.nku100.webui.ui.screen.drivers.DriverRepositoryReleases
 import io.github.nku100.webui.ui.screen.drivers.DriverSourceActionError
 import io.github.nku100.webui.ui.screen.drivers.withPackageDriver
 import io.github.nku100.webui.ui.theme.ThemeMode
+import io.github.nku100.webui.ui.theme.normalizePageScale
 import io.github.nku100.webui.ui.screen.settings.UpdateChannel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -218,6 +219,15 @@ class MainViewModel : ViewModel() {
 
     fun setThemeMode(mode: ThemeMode) =
         saveConfig(_uiState.value.config.copy(themeMode = mode.name))
+
+    fun setEnableMonet(enabled: Boolean) =
+        saveConfig(_uiState.value.config.copy(enableMonet = enabled))
+
+    fun setPageScale(scale: Float) =
+        saveConfig(_uiState.value.config.copy(pageScale = normalizePageScale(scale)))
+
+    fun setNavigationBadgeEnabled(enabled: Boolean) =
+        saveConfig(_uiState.value.config.copy(enableNavigationBadge = enabled))
 
     fun setEnableBlur(enabled: Boolean) =
         saveConfig(_uiState.value.config.copy(enableBlur = enabled))

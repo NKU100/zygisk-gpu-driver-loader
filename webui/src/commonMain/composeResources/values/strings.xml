@@ -45,6 +45,8 @@
     <!-- SettingsPage -->
     <string name="module_enabled">Module Enabled</string>
     <string name="module_enabled_summary">Enable or disable the Zygisk module</string>
+    <string name="theme_settings">Theme Settings</string>
+    <string name="theme_settings_summary">Theme, effects and navigation options</string>
     <string name="theme_mode">Theme Mode</string>
     <string name="theme_mode_summary">Choose light, dark, or follow system</string>
     <string name="theme_follow_system">Follow System</string>
@@ -131,6 +133,7 @@
 
     <!-- SuperSearchBar -->
     <string name="cancel">Cancel</string>
+    <string name="save">Save</string>
     <string name="search">Search</string>
     <string name="clear">Clear</string>
     <string name="root_required">Root required</string>
@@ -176,4 +179,10 @@
     <string name="driver_download_failed">The driver ZIP could not be downloaded.</string>
     <string name="driver_download_asset_info">ZIP · %1$s · %2$d downloads</string>
     <string name="driver_delete_repository_accessibility">Remove repository</string>
+    <string name="dynamic_colors">Dynamic Colors</string>
+    <string name="dynamic_colors_summary">Use system colors; turn off for the default Miuix palette</string>
+    <string name="page_scale">Page scale</string>
+    <string name="page_scale_summary">Adjust text and layout size</string>
+    <string name="navigation_badge">Navigation badge</string>
+    <string name="navigation_badge_summary">Show selected target app count on the Apps tab</string>
 </resources>
