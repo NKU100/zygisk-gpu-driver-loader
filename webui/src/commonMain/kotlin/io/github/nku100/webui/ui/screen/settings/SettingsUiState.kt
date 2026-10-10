@@ -29,7 +29,7 @@ data class SettingsUiState(
 @Immutable
 data class ThemeSettingsUiState(
     val themeMode: ThemeMode = ThemeMode.FOLLOW_SYSTEM,
-    val enableMonet: Boolean = true,
+    val enableMonet: Boolean = false,
     val enableBlur: Boolean = true,
     val enableFloatingBottomBar: Boolean = true,
     val enableFloatingBottomBarBlur: Boolean = true,
