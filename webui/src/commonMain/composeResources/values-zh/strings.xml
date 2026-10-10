@@ -87,6 +87,7 @@
 
     <!-- SuperSearchBar -->
     <string name="cancel">取消</string>
+    <string name="save">保存</string>
     <string name="search">搜索</string>
     <string name="clear">清除</string>
     <string name="root_required">需要 root 授权</string>

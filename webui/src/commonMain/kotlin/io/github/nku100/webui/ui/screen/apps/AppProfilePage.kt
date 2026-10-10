@@ -3,7 +3,6 @@ import org.jetbrains.compose.resources.stringResource
 import zygisk_module_webui_template.webui.generated.resources.*
 
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -17,11 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -48,12 +44,12 @@ import top.yukonga.miuix.kmp.basic.PopupPositionProvider
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.overlay.OverlayListPopup
 import top.yukonga.miuix.kmp.preference.SwitchPreference
+import io.github.nku100.webui.ui.component.EditableTextPreference
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.MoreCircle
@@ -87,10 +83,6 @@ fun AppProfilePage(
     val blurBackdrop = rememberDefaultBlurBackdrop(enableBlur)
 
     val settings = state.settings
-
-    // TextFields need local state for smooth typing; saved on value change with debounce effect
-    var logTagLocal by rememberSaveable(settings.logTag) { mutableStateOf(settings.logTag) }
-    var noteLocal by rememberSaveable(settings.note) { mutableStateOf(settings.note) }
 
     Scaffold(
         topBar = {
@@ -259,52 +251,31 @@ fun AppProfilePage(
                     modifier = Modifier
                         .padding(horizontal = 12.dp)
                         .padding(bottom = 12.dp),
-                    insideMargin = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 ) {
-                    Text(
-                        text = stringResource(Res.string.custom_tag),
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = colorScheme.onSurface,
-                    )
-                    Text(
-                        text = stringResource(Res.string.custom_tag_hint),
-                        fontSize = 13.sp,
-                        color = colorScheme.onSurfaceVariantSummary,
-                        modifier = Modifier.padding(top = 2.dp, bottom = 8.dp),
-                    )
-                    TextField(
-                        value = logTagLocal,
-                        onValueChange = {
-                            logTagLocal = it
-                            actions.onSaveSettings(settings.copy(logTag = it))
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = state.packageInfo.packageName.substringAfterLast('.'),
+                    EditableTextPreference(
+                        title = stringResource(Res.string.custom_tag),
+                        summary = settings.logTag.ifBlank { stringResource(Res.string.custom_tag_hint) },
+                        value = settings.logTag,
+                        dialogSummary = stringResource(Res.string.custom_tag_hint),
                         singleLine = true,
+                        onSave = { actions.onSaveSettings(settings.copy(logTag = it)) },
                     )
                 }
             }
 
-            // Note
-            item {
-                SmallTitle(text = stringResource(Res.string.section_note))
-            }
             item {
                 Card(
                     modifier = Modifier
                         .padding(horizontal = 12.dp)
                         .padding(bottom = 12.dp),
-                    insideMargin = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 ) {
-                    TextField(
-                        value = noteLocal,
-                        onValueChange = {
-                            noteLocal = it
-                            actions.onSaveSettings(settings.copy(note = it))
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = stringResource(Res.string.note_placeholder),
+                    EditableTextPreference(
+                        title = stringResource(Res.string.section_note),
+                        summary = settings.note.ifBlank { stringResource(Res.string.note_placeholder) },
+                        value = settings.note,
+                        dialogSummary = stringResource(Res.string.note_placeholder),
+                        singleLine = false,
+                        onSave = { actions.onSaveSettings(settings.copy(note = it)) },
                     )
                 }
             }

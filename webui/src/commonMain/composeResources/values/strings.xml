@@ -87,6 +87,7 @@
 
     <!-- SuperSearchBar -->
     <string name="cancel">Cancel</string>
+    <string name="save">Save</string>
     <string name="search">Search</string>
     <string name="clear">Clear</string>
     <string name="root_required">Root required</string>
