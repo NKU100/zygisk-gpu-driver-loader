@@ -24,6 +24,8 @@ cd zygisk-gpu-driver-loader
 
 模块 ZIP 输出到 `module/release/`；调试 APK 输出到 `webui-app/build/outputs/apk/debug/`。调试 APK 使用开发签名，不应将其描述为已配置正式发布签名的 APK。
 
+ARM64 原生构建会将 `module/src/main/cpp/patches/libadrenotools-hook-impl.patch` 应用到固定版本的 libadrenotools 子模块。若补丁无法应用或已不匹配，CMake 会停止构建，需先审查上游变更并更新补丁。
+
 当前发布工作流上传模块 ZIP、更新元数据和更新日志，不包含独立配置 APK。模块不打包第三方 GPU 驱动。
 
 模块身份定义在 `module.gradle.kts`。模块版本由 Git 标签和提交计数生成；`v*` 标签触发正式发布工作流，普通主干构建生成 `ci` 预发布。具体触发条件见 `.github/workflows/`。

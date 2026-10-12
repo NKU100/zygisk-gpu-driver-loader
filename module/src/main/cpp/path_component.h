@@ -18,7 +18,7 @@ inline bool safeFileName(const std::string &name) {
     for (unsigned char byte : name) {
         if (!((byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z') ||
               (byte >= '0' && byte <= '9') || byte == '.' || byte == '_' ||
-              byte == '-' || byte == ':' || byte == '@')) return false;
+              byte == '-' || byte == ':' || byte == '@' || byte == '+')) return false;
     }
     return true;
 }

@@ -1,0 +1,62 @@
+diff --git a/src/hook/hook_impl.cpp b/src/hook/hook_impl.cpp
+index 50e79a9..ced86ae 100644
+--- a/src/hook/hook_impl.cpp
++++ b/src/hook/hook_impl.cpp
+@@ -7,0 +8,2 @@
++#include <sys/prctl.h>
++#include <unistd.h>
+@@ -49,0 +52,6 @@ __attribute__((visibility("default"))) void *hook_android_dlopen_ext(const char
++    char threadName[16]{};
++    if (prctl(PR_GET_NAME, threadName, 0, 0, 0) == 0 && std::strcmp(threadName, "RenderThread") == 0) {
++        LOGI("hook_android_dlopen_ext: using system driver for Android RenderThread");
++        return fallback();
++    }
++
+@@ -57 +65 @@ __attribute__((visibility("default"))) void *hook_android_dlopen_ext(const char
+-                                           hook_params->hookLibDir.c_str(), ANDROID_NAMESPACE_TYPE_SHARED,
++                                           hook_params->hookLibDir.c_str(), ANDROID_NAMESPACE_TYPE_ISOLATED,
+@@ -65 +73,43 @@ __attribute__((visibility("default"))) void *hook_android_dlopen_ext(const char
+-    android_link_namespaces(driverNs, nullptr, "libandroid.so");
++    auto defaultNs{android_get_exported_namespace("default")};
++    std::string defaultLibraries{
++        "libandroid.so:libcutils.so:libz.so:libsync.so:libdmabufheap.so:liblog.so:libhardware.so:libbase.so:"
++        "libhidlbase.so:libutils.so:libnativewindow.so:libbinder_ndk.so:libvndksupport.so:"
++        "libmapperutils.so:libgralloctypes.so:android.hardware.common-V2-ndk.so:libc.so:libm.so:libdl.so"
++    };
++    if (access((hook_params->customDriverDir + "libc++.so").c_str(), R_OK) != 0)
++        defaultLibraries += ":libc++.so";
++    if (!defaultNs || !android_link_namespaces(driverNs, defaultNs, defaultLibraries.c_str())) {
++        LOGI("hook_android_dlopen_ext: hook failed: unable to link default namespace!");
++        return fallback();
++    }
++
++    // Drivers can depend on vendor libraries exported by the sphal namespace but not bundled with the driver.
++    auto sphalNs{android_get_exported_namespace("sphal")};
++    constexpr auto sphalLibraries{
++        "vendor.qti.hardware.display.mapper@2.0.so:"
++        "android.hardware.graphics.mapper@2.0.so:"
++        "vendor.qti.hardware.display.mapper@3.0.so:"
++        "android.hardware.graphics.mapper@3.0.so:"
++        "vendor.qti.hardware.display.mapperextensions@1.1.so:"
++        "vendor.qti.hardware.display.mapper@4.0.so:"
++        "android.hardware.graphics.mapper@4.0.so:"
++        "libgralloc.qti.so:"
++        "android.hardware.graphics.allocator-V2-ndk.so:"
++        "libmapperutils.so:libhidlbase.so:libutils.so:libnativewindow.so"
++    };
++    if (!sphalNs || !android_link_namespaces(driverNs, sphalNs, sphalLibraries)) {
++        LOGI("hook_android_dlopen_ext: hook failed: unable to link sphal namespace!");
++        return fallback();
++    }
++
++    auto driverCppRuntime{hook_params->customDriverDir + "libc++.so"};
++    if (access(driverCppRuntime.c_str(), R_OK) == 0) {
++        android_dlextinfo runtimeExtinfo{
++            .flags = ANDROID_DLEXT_USE_NAMESPACE | ANDROID_DLEXT_FORCE_LOAD,
++            .library_namespace = driverNs,
++        };
++        if (!android_dlopen_ext(driverCppRuntime.c_str(), RTLD_NOW | RTLD_GLOBAL, &runtimeExtinfo)) {
++            LOGI("hook_android_dlopen_ext: hook failed: unable to preload bundled libc++: %s", dlerror());
++            return fallback();
++        }
++    }

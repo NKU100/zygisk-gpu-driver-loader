@@ -24,6 +24,32 @@ target_compile_definitions(${MODULE_NAME} PRIVATE MODULE_ID="${MODULE_ID}")
 
 if(ANDROID_ABI STREQUAL "arm64-v8a")
     set(BUILD_SHARED_LIBS OFF)
+    set(adrenotools_dir "${CMAKE_CURRENT_SOURCE_DIR}/external/libadrenotools")
+    set(adrenotools_patch "${CMAKE_CURRENT_SOURCE_DIR}/patches/libadrenotools-hook-impl.patch")
+    execute_process(
+        COMMAND git apply --unidiff-zero --check "${adrenotools_patch}"
+        WORKING_DIRECTORY "${adrenotools_dir}"
+        RESULT_VARIABLE adrenotools_patch_needed
+    )
+    if(adrenotools_patch_needed EQUAL 0)
+        execute_process(
+            COMMAND git apply --unidiff-zero "${adrenotools_patch}"
+            WORKING_DIRECTORY "${adrenotools_dir}"
+            RESULT_VARIABLE adrenotools_patch_result
+        )
+        if(NOT adrenotools_patch_result EQUAL 0)
+            message(FATAL_ERROR "Failed to apply the pinned libadrenotools patch")
+        endif()
+    else()
+        execute_process(
+            COMMAND git apply --unidiff-zero --reverse --check "${adrenotools_patch}"
+            WORKING_DIRECTORY "${adrenotools_dir}"
+            RESULT_VARIABLE adrenotools_patch_applied
+        )
+        if(NOT adrenotools_patch_applied EQUAL 0)
+            message(FATAL_ERROR "Pinned libadrenotools source changed; review the local patch")
+        endif()
+    endif()
     add_subdirectory(external/libadrenotools EXCLUDE_FROM_ALL)
     # The Zygisk module initializes linker symbols only after a target and its private files pass validation.
     # The separately built hook libraries retain upstream constructor behavior.
