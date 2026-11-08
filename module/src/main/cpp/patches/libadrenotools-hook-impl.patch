@@ -1,5 +1,5 @@
 diff --git a/src/hook/hook_impl.cpp b/src/hook/hook_impl.cpp
-index 50e79a9..ced86ae 100644
+index 50e79a9..64450c0 100644
 --- a/src/hook/hook_impl.cpp
 +++ b/src/hook/hook_impl.cpp
 @@ -7,0 +8,2 @@
@@ -12,10 +12,11 @@ index 50e79a9..ced86ae 100644
 +        return fallback();
 +    }
 +
-@@ -57 +65 @@ __attribute__((visibility("default"))) void *hook_android_dlopen_ext(const char
--                                           hook_params->hookLibDir.c_str(), ANDROID_NAMESPACE_TYPE_SHARED,
-+                                           hook_params->hookLibDir.c_str(), ANDROID_NAMESPACE_TYPE_ISOLATED,
-@@ -65 +73,43 @@ __attribute__((visibility("default"))) void *hook_android_dlopen_ext(const char
+@@ -55,0 +64,3 @@ __attribute__((visibility("default"))) void *hook_android_dlopen_ext(const char
++    // A shared namespace inherits the sphal permitted paths. Packaged Qualcomm helpers such as
++    // adrenoutils_extra.so open /vendor/lib64/libadreno_utils.so by absolute path and recurse until the
++    // stack overflows when that load is rejected.
+@@ -65 +76,44 @@ __attribute__((visibility("default"))) void *hook_android_dlopen_ext(const char
 -    android_link_namespaces(driverNs, nullptr, "libandroid.so");
 +    auto defaultNs{android_get_exported_namespace("default")};
 +    std::string defaultLibraries{
@@ -40,6 +41,7 @@ index 50e79a9..ced86ae 100644
 +        "vendor.qti.hardware.display.mapperextensions@1.1.so:"
 +        "vendor.qti.hardware.display.mapper@4.0.so:"
 +        "android.hardware.graphics.mapper@4.0.so:"
++        "libadreno_utils.so:libgsl.so:"
 +        "libgralloc.qti.so:"
 +        "android.hardware.graphics.allocator-V2-ndk.so:"
 +        "libmapperutils.so:libhidlbase.so:libutils.so:libnativewindow.so"

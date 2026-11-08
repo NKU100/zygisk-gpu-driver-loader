@@ -97,6 +97,16 @@ CE 不存在时使用同一用户、同一包的 DE 目录。应用进程在 spe
 
 `libadrenotools` 使用 `ADRENOTOOLS_DRIVER_CUSTOM`。本阶段暂不启用 file redirect 和 GPU memory mapping 功能，以减少权限和兼容性变量。
 
+驱动 namespace 使用 `ANDROID_NAMESPACE_TYPE_SHARED`，以继承 sphal 的允许路径；`default` 与
+`sphal` 的链接列表补充驱动常用的系统库和 Qualcomm 接口库。部分高通驱动包内的
+`adrenoutils_extra.so` 会以绝对路径打开 `/vendor/lib64/libadreno_utils.so`，在 isolated
+namespace 中被拒绝后递归重试直至栈溢出，因此不使用 isolated namespace。
+
+linker 内部符号优先通过 `ld-android.so` 与 `libdl_android.so` 的导出符号直接解析。上游
+linkernsbypass 通过逐条扫描 `dlopen` 指令定位内部函数，会把 `libdl.so` 代码页改为可写可执行；
+DevCheck 等使用 PairIP 完整性校验的 App 会因此主动崩溃。主模块仅在直接解析失败时回退到上游
+扫描；暂存到 App 私有目录的 `libhook_impl.so` 只做直接解析。
+
 PPSSPP 自己从私有 loader 句柄解析 Vulkan 函数，普通目标 App 不会使用模块打开的私有句柄。
 模块因此将 AdrenoTools 的 `hook_impl.cpp` 编入注入库，初始化进程生命周期内有效的
 `HookImplParams`，并拦截系统 loader 的驱动请求，而不把 `adrenotools_open_libvulkan()`

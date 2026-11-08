@@ -52,14 +52,16 @@ if(ANDROID_ABI STREQUAL "arm64-v8a")
     endif()
     add_subdirectory(external/libadrenotools EXCLUDE_FROM_ALL)
     # The Zygisk module initializes linker symbols only after a target and its private files pass validation.
-    # The separately built hook libraries retain upstream constructor behavior.
+    # The staged hook library resolves them on load without the upstream instruction walk.
     set(linker_source_dir "${CMAKE_CURRENT_SOURCE_DIR}/external/libadrenotools/lib/linkernsbypass")
     file(READ "${linker_source_dir}/android_linker_ns.cpp" linker_source)
     string(REPLACE "__attribute__((constructor)) static void resolve_linker_symbols()"
-        "extern \"C\" void gpu_initialize_linker_symbols()" deferred_linker_source "${linker_source}")
+        "static void gpu_resolve_linker_symbols_by_walk()" deferred_linker_source "${linker_source}")
     if(deferred_linker_source STREQUAL linker_source)
         message(FATAL_ERROR "Pinned linkernsbypass initializer changed; review deferred initialization")
     endif()
+    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/linker_symbols_direct.inc" linker_direct_source)
+    string(APPEND deferred_linker_source "${linker_direct_source}")
     file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/deferred_linker.cpp" CONTENT "${deferred_linker_source}")
     add_library(gpu_linkernsbypass STATIC "${CMAKE_CURRENT_BINARY_DIR}/deferred_linker.cpp"
         "${linker_source_dir}/elf_soname_patcher.cpp")
@@ -69,6 +71,13 @@ if(ANDROID_ABI STREQUAL "arm64-v8a")
     target_include_directories(${MODULE_NAME} PRIVATE external/libadrenotools/src/hook)
     target_link_libraries(gpu_linkernsbypass dl)
     set_target_properties(gpu_linkernsbypass PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    add_library(gpu_linkernsbypass_hook STATIC "${CMAKE_CURRENT_BINARY_DIR}/deferred_linker.cpp"
+        "${linker_source_dir}/elf_soname_patcher.cpp")
+    target_compile_definitions(gpu_linkernsbypass_hook PRIVATE GPU_LINKER_DIRECT_ONLY)
+    target_include_directories(gpu_linkernsbypass_hook PUBLIC "${linker_source_dir}")
+    target_link_libraries(gpu_linkernsbypass_hook android dl)
+    set_target_properties(gpu_linkernsbypass_hook PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    set_property(TARGET hook_impl PROPERTY LINK_LIBRARIES gpu_linkernsbypass_hook log)
     set_property(TARGET adrenotools PROPERTY LINK_LIBRARIES gpu_linkernsbypass)
     set_property(TARGET adrenotools PROPERTY INTERFACE_LINK_LIBRARIES gpu_linkernsbypass)
     set_target_properties(adrenotools linkernsbypass PROPERTIES POSITION_INDEPENDENT_CODE ON)
