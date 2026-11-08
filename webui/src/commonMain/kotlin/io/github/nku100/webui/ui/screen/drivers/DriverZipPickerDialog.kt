@@ -63,21 +63,21 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton as MiuixTextButton
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
-import zygisk_module_webui_template.webui.generated.resources.Res
-import zygisk_module_webui_template.webui.generated.resources.back
-import zygisk_module_webui_template.webui.generated.resources.cancel
-import zygisk_module_webui_template.webui.generated.resources.driver_picker_access_denied
-import zygisk_module_webui_template.webui.generated.resources.driver_picker_empty
-import zygisk_module_webui_template.webui.generated.resources.driver_picker_folder_accessibility
-import zygisk_module_webui_template.webui.generated.resources.driver_picker_import
-import zygisk_module_webui_template.webui.generated.resources.driver_picker_invalid_path
-import zygisk_module_webui_template.webui.generated.resources.driver_picker_retry
-import zygisk_module_webui_template.webui.generated.resources.driver_picker_selected_accessibility
-import zygisk_module_webui_template.webui.generated.resources.driver_picker_storage_error
-import zygisk_module_webui_template.webui.generated.resources.driver_picker_storage_root
-import zygisk_module_webui_template.webui.generated.resources.driver_picker_title
-import zygisk_module_webui_template.webui.generated.resources.driver_picker_zip_accessibility
-import zygisk_module_webui_template.webui.generated.resources.driver_working
+import io.github.nku100.webui.generated.resources.Res
+import io.github.nku100.webui.generated.resources.back
+import io.github.nku100.webui.generated.resources.cancel
+import io.github.nku100.webui.generated.resources.driver_picker_access_denied
+import io.github.nku100.webui.generated.resources.driver_picker_empty
+import io.github.nku100.webui.generated.resources.driver_picker_folder_accessibility
+import io.github.nku100.webui.generated.resources.driver_picker_import
+import io.github.nku100.webui.generated.resources.driver_picker_invalid_path
+import io.github.nku100.webui.generated.resources.driver_picker_retry
+import io.github.nku100.webui.generated.resources.driver_picker_selected_accessibility
+import io.github.nku100.webui.generated.resources.driver_picker_storage_error
+import io.github.nku100.webui.generated.resources.driver_picker_storage_root
+import io.github.nku100.webui.generated.resources.driver_picker_title
+import io.github.nku100.webui.generated.resources.driver_picker_zip_accessibility
+import io.github.nku100.webui.generated.resources.driver_working
 
 @Composable
 internal fun DriverZipPickerDialog(

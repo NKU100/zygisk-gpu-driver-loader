@@ -1,3 +1,4 @@
+// Applied to both settings.gradle.kts and the root build script; keep this file to plain extra values.
 val moduleId by extra("zygisk_gpu_driver_loader")
 val moduleName by extra("Zygisk GPU Driver Loader")
 val moduleAuthor by extra("NKU100")

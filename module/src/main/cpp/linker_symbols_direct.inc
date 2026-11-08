@@ -31,10 +31,10 @@ __attribute__((constructor)) static void gpu_resolve_linker_symbols_on_load() {
 extern "C" void gpu_initialize_linker_symbols() {
     if (android_get_device_api_level() < 28) return;
     if (gpu_resolve_linker_symbols_directly()) {
-        __android_log_print(ANDROID_LOG_DEBUG, "GpuDriverLoader", "linker symbols resolved directly");
+        __android_log_print(ANDROID_LOG_DEBUG, MODULE_LOG_TAG, "linker symbols resolved directly");
         return;
     }
-    __android_log_print(ANDROID_LOG_WARN, "GpuDriverLoader",
+    __android_log_print(ANDROID_LOG_WARN, MODULE_LOG_TAG,
                         "linker symbols unavailable directly; falling back to instruction walk");
     gpu_resolve_linker_symbols_by_walk();
 }

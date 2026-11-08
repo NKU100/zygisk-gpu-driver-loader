@@ -93,7 +93,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
-import zygisk_module_webui_template.webui.generated.resources.*
+import io.github.nku100.webui.generated.resources.*
 
 @Composable
 fun DriversPage(

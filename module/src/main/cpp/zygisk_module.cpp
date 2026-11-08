@@ -73,9 +73,10 @@ static bool socket_transfer(int fd, void *buffer, size_t size, bool writing) {
     return true;
 }
 
-#ifndef MODULE_ID
-#define MODULE_ID  "zygisk_sample"
+#if !defined(MODULE_ID) || !defined(MODULE_LOG_TAG)
+#error "MODULE_ID and MODULE_LOG_TAG must be defined by the build from module.gradle.kts"
 #endif
+#define LOG_TAG    MODULE_LOG_TAG
 #define DATA_DIR    "/data/adb/" MODULE_ID
 #define CONFIG_PATH DATA_DIR "/config.json"
 #define LOG_PATH    DATA_DIR "/module.log"

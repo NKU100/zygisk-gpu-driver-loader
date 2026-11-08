@@ -1,12 +1,25 @@
 cmake_minimum_required(VERSION 3.22.1)
-project(sample)
+
+foreach(required MODULE_NAME MODULE_ID MODULE_LOG_TAG)
+    if(NOT DEFINED ${required} OR "${${required}}" STREQUAL "")
+        message(FATAL_ERROR "${required} must be provided by the Gradle build from module.gradle.kts")
+    endif()
+endforeach()
+if(NOT MODULE_ID MATCHES "^[A-Za-z0-9_.-]+$" OR MODULE_ID STREQUAL "." OR MODULE_ID STREQUAL "..")
+    message(FATAL_ERROR "MODULE_ID must be a single safe path component")
+endif()
+if(NOT MODULE_LOG_TAG MATCHES "^[A-Za-z0-9_.-]+$")
+    message(FATAL_ERROR "MODULE_LOG_TAG may only contain letters, digits, '_', '.', and '-'")
+endif()
+
+project(${MODULE_NAME})
 
 set(CXX_FLAGS "${CXX_FLAGS} -fno-exceptions -fno-rtti -fvisibility=hidden -fvisibility-inlines-hidden")
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CXX_FLAGS}")
 
 add_library(${MODULE_NAME} SHARED
-        example.cpp
+        zygisk_module.cpp
         driver_loader.cpp
         graphics_environment.cpp
         companion_fd.cpp
@@ -14,13 +27,10 @@ add_library(${MODULE_NAME} SHARED
 )
 target_include_directories(${MODULE_NAME} PRIVATE external external/libadrenotools/include)
 target_link_libraries(${MODULE_NAME} log)
-if(NOT DEFINED MODULE_ID)
-    set(MODULE_ID "zygisk_sample")
-endif()
-if(NOT MODULE_ID MATCHES "^[A-Za-z0-9_.-]+$" OR MODULE_ID STREQUAL "." OR MODULE_ID STREQUAL "..")
-    message(FATAL_ERROR "MODULE_ID must be a single safe path component")
-endif()
-target_compile_definitions(${MODULE_NAME} PRIVATE MODULE_ID="${MODULE_ID}")
+target_compile_definitions(${MODULE_NAME} PRIVATE
+        MODULE_ID="${MODULE_ID}"
+        MODULE_LOG_TAG="${MODULE_LOG_TAG}"
+)
 
 if(ANDROID_ABI STREQUAL "arm64-v8a")
     set(BUILD_SHARED_LIBS OFF)
@@ -66,6 +76,7 @@ if(ANDROID_ABI STREQUAL "arm64-v8a")
     add_library(gpu_linkernsbypass STATIC "${CMAKE_CURRENT_BINARY_DIR}/deferred_linker.cpp"
         "${linker_source_dir}/elf_soname_patcher.cpp")
     target_include_directories(gpu_linkernsbypass PUBLIC "${linker_source_dir}")
+    target_compile_definitions(gpu_linkernsbypass PRIVATE MODULE_LOG_TAG="${MODULE_LOG_TAG}")
     target_include_directories(${MODULE_NAME} PRIVATE "${linker_source_dir}")
     target_sources(${MODULE_NAME} PRIVATE external/libadrenotools/src/hook/hook_impl.cpp)
     target_include_directories(${MODULE_NAME} PRIVATE external/libadrenotools/src/hook)

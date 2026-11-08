@@ -38,7 +38,7 @@
 extern "C" void gpu_initialize_linker_symbols();
 
 #ifndef MODULE_ID
-#define MODULE_ID "zygisk_sample"
+#error "MODULE_ID must be defined by the build from module.gradle.kts"
 #endif
 
 namespace gpu {
