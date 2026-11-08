@@ -54,7 +54,7 @@ jobs:
           body: |
             This pull request contains the latest changes from the template repository.
 
-            The workflow enables squash auto-merge when GitHub confirms this pull request is mergeable. Pull requests with conflicts or unresolved merge requirements remain open for review.
+            The workflow enables auto-merge with a merge commit when GitHub confirms this pull request is mergeable. Pull requests with conflicts or unresolved merge requirements remain open for review.
 
       - name: Enable auto-merge when the pull request is mergeable
         if: steps.create-pull-request.outputs.pull-request-number != ''
@@ -77,4 +77,5 @@ jobs:
             exit 0
           fi
 
-          gh pr merge "$PR_NUMBER" --auto --squash --delete-branch
+          # A merge commit keeps the template commit as an ancestor; squash merges make later runs merge it again.
+          gh pr merge "$PR_NUMBER" --auto --merge --delete-branch --subject 'chore: sync template updates'
