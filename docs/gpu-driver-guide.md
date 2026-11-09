@@ -12,9 +12,11 @@
 
 已有验证覆盖 Redmi 23117RK66C、Android API 36、Adreno 750、KernelSU / Zygisk Next 上的 Unity Vulkan 场景和独立 Vulkan 探针。探针完成了设备创建、队列提交及缓冲区回读，Unity 场景使用了私有 Turnip 驱动并显示画面。
 
-一加 13（PJZ110、Android API 36、Adreno 830、KernelSU / Zygisk Next）已验证 CapsViewer 4.13 加载 Turnip A8XX Draft，显示 Vulkan 1.4.335、驱动版本 25.99.99，并通过重复冷启动及切回系统驱动的检查。这项验证覆盖能力查询，不代表全部 Vulkan 渲染场景兼容。
+一加 13（PJZ110、Android 17 `CP2A.260605.016`、Adreno 830、KernelSU / Zygisk Next）已验证 891.14 驱动包：CapsViewer 4.13 显示 Adreno 830、驱动版本 512.891.14，DevCheck 可正常打开，多次冷启动均加载选中的驱动。这项验证覆盖启动和能力查询，不代表全部 Vulkan 渲染场景兼容。
 
 对于启动前已预加载系统 Vulkan 驱动的进程，模块使用框架驱动命名空间触发重新加载。该路径将目标进程的 Android HWUI 后端设为 GLES，并让 EGL 保持系统驱动；应用自身的 Vulkan 请求仍使用选中的驱动。处理仅作用于目标进程，不修改系统全局属性或 vendor 文件。
+
+系统默认使用 Vulkan 渲染界面，或在开发者选项中将界面渲染切换为 Vulkan 时，目标进程的界面渲染线程会先请求 Vulkan 驱动。部分系统会在应用进程中映射两份 `libbase.so`，只拦截 `libbase.so` 的属性读取不一定能覆盖 HWUI，因此模块同时拦截 `libhwui.so` 自身对 `debug.hwui.renderer` 的读取。若 HWUI 仍使用 Vulkan，该线程会保持系统驱动，日志显示 `status=SystemFallback`，应用随后复用该驱动。
 
 Redmi 23117RK66C 上还验证了从 Meta Ray-Ban Display 提取的 Qualcomm v863.1 驱动包：CapsViewer 4.13 显示 Adreno 750、驱动版本 512.863.1，DevCheck 可正常打开。这两项只覆盖启动和能力查询。
 

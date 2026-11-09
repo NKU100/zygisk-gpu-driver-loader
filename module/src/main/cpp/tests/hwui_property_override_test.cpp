@@ -14,7 +14,14 @@ void readOriginal(const Info *info, gpu::HwuiPropertyOverride<Info>::Callback ca
 void record(void *cookie, const char *, const char *value, unsigned) {
     *static_cast<std::string *>(cookie) = value;
 }
+std::string getOriginal(const std::string &key, const std::string &fallback) {
+    return key == other.name ? other.value : fallback;
+}
 int main() {
+    assert(gpu::hwuiRendererProperty<std::string>("debug.hwui.renderer", "skiavk", getOriginal) == "skiagl");
+    assert(gpu::hwuiRendererProperty<std::string>("ro.build.version.sdk", "", getOriginal) == "36");
+    assert(gpu::hwuiRendererProperty<std::string>("missing.property", "fallback", getOriginal) == "fallback");
+    assert(gpu::hwuiRendererProperty<std::string>("debug.hwui.renderer.extra", "x", getOriginal) == "x");
     gpu::HwuiPropertyOverride<Info> properties;
     auto renderer = properties.find("debug.hwui.renderer", findOriginal);
     assert(renderer != nullptr);

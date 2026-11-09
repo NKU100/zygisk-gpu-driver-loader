@@ -12,6 +12,8 @@ NativeSetter originalSetter = nullptr;
 HwuiPropertyOverride<prop_info> hwuiProperties;
 HwuiPropertyOverride<prop_info>::Find originalPropertyFind = nullptr;
 HwuiPropertyOverride<prop_info>::Read originalPropertyRead = nullptr;
+using GetProperty = std::string (*)(const std::string &, const std::string &);
+GetProperty originalGetProperty = nullptr;
 void *(*originalEglDriverNamespace)(void *) = nullptr;
 
 void *systemEglDriverNamespace(void *) {
@@ -28,6 +30,10 @@ void readProperty(const prop_info *info, HwuiPropertyOverride<prop_info>::Callba
     hwuiProperties.read(info, callback, cookie, originalPropertyRead);
 }
 
+std::string getHwuiProperty(const std::string &key, const std::string &fallback) {
+    return hwuiRendererProperty(key, fallback, originalGetProperty);
+}
+
 void forwardSetter(JNIEnv *env, jclass type, jstring path, jstring libraries) {
     if (originalSetter) originalSetter(env, type, path, libraries);
 }
@@ -35,12 +41,19 @@ void forwardSetter(JNIEnv *env, jclass type, jstring path, jstring libraries) {
 
 bool configureHwuiGles(zygisk::Api *api, std::string &reason) {
     struct stat identity{};
+    struct stat hwuiIdentity{};
     struct stat eglIdentity{};
     if (!api || stat("/system/lib64/libbase.so", &identity) ||
+        stat("/system/lib64/libhwui.so", &hwuiIdentity) ||
         stat("/system/lib64/libEGL.so", &eglIdentity)) {
         reason = "HWUI property library unavailable";
         return false;
     }
+    // Some vendor images map libbase.so twice and the PLT hook patches only one copy, so HWUI's own
+    // import is redirected as well; the libbase hooks still cover other readers of the property.
+    api->pltHookRegister(hwuiIdentity.st_dev, hwuiIdentity.st_ino,
+        "_ZN7android4base11GetPropertyERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEES9_",
+        reinterpret_cast<void *>(getHwuiProperty), reinterpret_cast<void **>(&originalGetProperty));
     api->pltHookRegister(identity.st_dev, identity.st_ino, "__system_property_find",
         reinterpret_cast<void *>(findProperty), reinterpret_cast<void **>(&originalPropertyFind));
     api->pltHookRegister(identity.st_dev, identity.st_ino, "__system_property_read_callback",
@@ -49,10 +62,13 @@ bool configureHwuiGles(zygisk::Api *api, std::string &reason) {
         "_ZN7android11GraphicsEnv18getDriverNamespaceEv",
         reinterpret_cast<void *>(systemEglDriverNamespace),
         reinterpret_cast<void **>(&originalEglDriverNamespace));
-    bool ready = api->pltHookCommit() && originalPropertyFind && originalPropertyRead &&
-        originalEglDriverNamespace;
+    const bool committed = api->pltHookCommit();
+    const bool hwuiImport = originalGetProperty != nullptr;
+    const bool libbaseRead = originalPropertyFind && originalPropertyRead;
+    bool ready = committed && (hwuiImport || libbaseRead) && originalEglDriverNamespace;
     reason = ready ? "per-app HWUI GLES override installed; EGL retains system driver" :
         "per-app HWUI GLES property override unavailable";
+    if (ready && !hwuiImport) reason += " (libbase only)";
     return ready;
 }
 
